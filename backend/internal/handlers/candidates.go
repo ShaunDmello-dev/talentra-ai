@@ -3,11 +3,11 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-	"log"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -22,6 +22,7 @@ type CandidateResult struct {
 	Email            string   `json:"email"`
 	Location         string   `json:"location"`
 	YearsExperience  int      `json:"years_experience"`
+	CandidateScore   *int     `json:"candidate_score"`
 	ExpectedCTCLPA   *float64 `json:"expected_ctc_lpa"`
 	AvailabilityDays *int     `json:"availability_days"`
 	Skills           []string `json:"skills"`
@@ -57,6 +58,19 @@ func (h *CandidateSearchHandler) Search(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		minExperience = &value
+	}
+	var minCandidateScore *int
+	if raw := query.Get("min_candidate_score"); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 80 || value > 100 {
+			http.Error(
+				w,
+				"min_candidate_score must be between 80 and 100",
+				http.StatusBadRequest,
+			)
+			return
+		}
+		minCandidateScore = &value
 	}
 
 	var maxCTC *float64
@@ -100,6 +114,7 @@ func (h *CandidateSearchHandler) Search(w http.ResponseWriter, r *http.Request) 
 			email,
 			location,
 			years_experience,
+			candidate_score,
 			expected_ctc_lpa,
 			availability_days,
 			COALESCE(skills, ARRAY[]::text[]),
@@ -119,14 +134,16 @@ func (h *CandidateSearchHandler) Search(w http.ResponseWriter, r *http.Request) 
 					)
 				)
 		  AND ($3::int IS NULL OR years_experience >= $3)
-		  AND ($4::numeric IS NULL OR expected_ctc_lpa <= $4)
-		  AND ($5::int IS NULL OR availability_days <= $5)
+		  AND ($4::int IS NULL OR candidate_score >= $4)
+		  AND ($5::numeric IS NULL OR expected_ctc_lpa <= $5)
+		  AND ($6::int IS NULL OR availability_days <= $6)
 		ORDER BY years_experience DESC, full_name ASC
-		LIMIT $6
+		LIMIT $7
 	`,
 		locationFilter,
 		skillsFilter,
 		minExperience,
+		minCandidateScore,
 		maxCTC,
 		availableWithin,
 		limit,
@@ -149,6 +166,7 @@ func (h *CandidateSearchHandler) Search(w http.ResponseWriter, r *http.Request) 
 			&candidate.Email,
 			&candidate.Location,
 			&candidate.YearsExperience,
+			&candidate.CandidateScore,
 			&candidate.ExpectedCTCLPA,
 			&candidate.AvailabilityDays,
 			&candidate.Skills,

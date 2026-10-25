@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -51,7 +50,7 @@ func main() {
 	log.Println("Connected to PostgreSQL successfully")
 
 	router := chi.NewRouter()
-	
+
 	// Development CORS: allow requests from Vite.
 	router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -81,21 +80,27 @@ func main() {
 	})
 
 	authHandler := &handlers.AuthHandler{DB: pool}
-	
+
 	router.Post("/api/v1/auth/register", authHandler.Register)
 	router.Post("/api/v1/auth/login", authHandler.Login)
 	router.Get("/api/v1/auth/me", authHandler.Me)
 	router.Post("/api/v1/auth/logout", authHandler.Logout)
-		candidateSearchHandler := &handlers.CandidateSearchHandler{
+	candidateSearchHandler := &handlers.CandidateSearchHandler{
+		DB: pool,
+	}
+	jobSearchHandler := &handlers.JobSearchHandler{
 		DB: pool,
 	}
 	nlpHandler := &handlers.NLPHandler{}
 
 	router.With(handlers.RequireAuth(pool, "recruiter")).
-    Get("/api/v1/recruiter/candidates", candidateSearchHandler.Search)
+		Get("/api/v1/recruiter/candidates", candidateSearchHandler.Search)
 	router.With(handlers.RequireAuth(pool, "recruiter")).
-    Post("/api/v1/recruiter/parse-search", nlpHandler.ParseSearch)
-	
+		Post("/api/v1/recruiter/parse-search", nlpHandler.ParseSearch)
+	router.With(handlers.RequireAuth(pool, "candidate")).
+		Get("/api/v1/candidate/jobs", jobSearchHandler.Search)
+	router.With(handlers.RequireAuth(pool, "candidate")).
+	Post("/api/v1/candidate/parse-search", nlpHandler.ParseJobSearch)
 
 	// API health check.
 	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {

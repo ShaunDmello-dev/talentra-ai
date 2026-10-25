@@ -1,0 +1,455 @@
+
+import { createFileRoute, Link } from "@tanstack/react-router";
+import {
+  BriefcaseBusiness,
+  Building2,
+  Bookmark,
+  UserRound,
+  Search,
+  Sparkles,
+  MapPin,
+  ArrowUpRight,
+  Mic,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+
+type Job = {
+  id: number;
+  title: string;
+  company_name: string | null;
+  location: string | null;
+  min_salary_lpa: number | null;
+  max_salary_lpa: number | null;
+  work_mode: string | null;
+  description: string | null;
+};
+
+type JobSearchFilters = {
+  title: string;
+  location: string;
+  min_salary_lpa: number;
+  work_mode: string;
+  skills: string[];
+  min_experience: number;
+};
+
+export const Route = createFileRoute("/candidate/dashboard")({
+  component: CandidateDashboard,
+});
+
+function CandidateDashboard() {
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [search, setSearch] = useState("");
+  const [location, setLocation] = useState("");
+  const [workMode, setWorkMode] = useState("");
+  const [minSalary, setMinSalary] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [searched, setSearched] = useState(false);
+
+  async function loadJobs(filters?: JobSearchFilters) {
+    setLoading(true);
+    setError("");
+
+    const params = new URLSearchParams();
+    params.set("limit", "20");
+
+    const selectedTitle = filters?.title?.trim() ?? "";
+    const selectedLocation =
+      location.trim() || filters?.location?.trim() || "";
+    const selectedWorkMode = workMode || filters?.work_mode || "";
+    const selectedSalary =
+      minSalary ||
+      (filters && filters.min_salary_lpa > 0
+        ? String(filters.min_salary_lpa)
+        : "");
+
+    if (selectedTitle) params.set("title", selectedTitle);
+    if (selectedLocation) params.set("location", selectedLocation);
+    if (selectedWorkMode) params.set("work_mode", selectedWorkMode);
+    if (selectedSalary) params.set("min_salary_lpa", selectedSalary);
+
+    if (filters?.skills?.length) {
+      params.set("skills", filters.skills.join(","));
+    }
+
+    if (filters && filters.min_experience > 0) {
+      params.set("min_experience", String(filters.min_experience));
+    }
+
+    try {
+      const response = await fetch(
+        `http://localhost:8080/api/v1/candidate/jobs?${params.toString()}`,
+        { credentials: "include" },
+      );
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          throw new Error("Your session expired. Please sign in again.");
+        }
+        throw new Error("Unable to load jobs. Please try again.");
+      }
+
+      const data: { jobs?: Job[] } = await response.json();
+      setJobs(data.jobs ?? []);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Something went wrong.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+
+
+async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
+  event.preventDefault();
+  setSearched(true);
+  setLoading(true);
+  setError("");
+
+  try {
+    if (!search.trim()) {
+      await loadJobs();
+      return;
+    }
+
+    let filters: JobSearchFilters;
+
+    try {
+      const parseResponse = await fetch(
+        "http://localhost:8080/api/v1/candidate/parse-search",
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: search.trim() }),
+        },
+      );
+
+      if (!parseResponse.ok) {
+        throw new Error("Gemini search unavailable");
+      }
+
+      filters = await parseResponse.json();
+    } catch (parseError) {
+      console.warn(
+        "AI search unavailable; using basic keyword search instead.",
+        parseError,
+      );
+
+      // Fallback: search by the user's words and manual filters.
+      filters = {
+        title: search.trim(),
+        location: "",
+        min_salary_lpa: 0,
+        work_mode: "",
+        skills: [],
+        min_experience: 0,
+      };
+
+      setError(
+        "AI search was temporarily unavailable. Showing basic keyword results instead.",
+      );
+    }
+
+    await loadJobs(filters);
+  } catch (err) {
+    setError(
+      err instanceof Error ? err.message : "Something went wrong.",
+    );
+    setLoading(false);
+  }
+}
+
+
+
+  useEffect(() => {
+    void loadJobs();
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-[#FAF9FC] text-[#292524] md:flex">
+      <aside className="border-b border-violet-100 bg-white p-5 md:sticky md:top-0 md:h-screen md:w-64 md:shrink-0 md:border-b-0 md:border-r">
+        <Link to="/" className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#312E81] text-white shadow-sm">
+            <Sparkles size={20} />
+          </span>
+          <span className="text-lg font-bold tracking-tight text-[#312E81]">
+            Talentra <span className="font-medium">AI</span>
+          </span>
+        </Link>
+
+        <p className="mb-3 mt-10 text-xs font-semibold uppercase tracking-wider text-stone-400">
+          Candidate workspace
+        </p>
+
+        <nav className="space-y-1">
+          <NavItem icon={<BriefcaseBusiness size={18} />} label="Overview" active />
+          <NavItem icon={<Search size={18} />} label="Find jobs" />
+          <NavItem icon={<Building2 size={18} />} label="Find companies" />
+          <NavItem icon={<Bookmark size={18} />} label="Saved jobs" />
+          <NavItem icon={<UserRound size={18} />} label="My profile" />
+        </nav>
+
+        <div className="mt-10 rounded-2xl bg-[#FFF7ED] p-4">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-[#7C3AED]">
+            <Sparkles size={18} />
+          </span>
+          <p className="mt-3 text-sm font-semibold text-[#312E81]">
+            Your next chapter
+          </p>
+          <p className="mt-1 text-xs leading-5 text-stone-600">
+            Discover opportunities that fit your skills and goals.
+          </p>
+        </div>
+      </aside>
+
+      <main className="min-w-0 flex-1 p-5 sm:p-8">
+        <header className="mb-8">
+          <p className="text-sm font-medium text-[#7C3AED]">
+            Candidate workspace
+          </p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#312E81]">
+            Find your next opportunity
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">
+            Describe your ideal job in plain English, and let AI find matching
+            opportunities.
+          </p>
+        </header>
+
+        <section className="mb-8 rounded-2xl border border-violet-100 bg-white p-5 shadow-sm sm:p-6">
+          <div className="mb-4 flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-[#7C3AED]">
+              <Sparkles size={20} />
+            </span>
+            <div>
+              <h2 className="font-semibold text-[#312E81]">
+                AI job search
+              </h2>
+              <p className="text-xs text-stone-500">
+                Tell us what kind of role you're looking for.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSearch} className="space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-stone-200 px-3 focus-within:border-violet-400">
+                <Search size={18} className="shrink-0 text-stone-400" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="e.g. Remote React jobs in Mumbai paying 15 LPA"
+                  aria-label="Describe your ideal job"
+                  className="min-w-0 flex-1 bg-transparent py-3 text-sm outline-none"
+                />
+                <button
+                  type="button"
+                  title="Voice search coming soon"
+                  onClick={() =>
+                    setError("Voice search is planned for a later phase.")
+                  }
+                  className="rounded-lg p-2 text-stone-400 hover:bg-violet-50"
+                >
+                  <Mic size={18} />
+                </button>
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#4338CA] px-5 py-3 text-sm font-semibold text-white hover:bg-[#312E81] disabled:opacity-60"
+              >
+                <Search size={16} />
+                {loading && searched ? "Searching..." : "Search jobs"}
+              </button>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="text-xs font-medium text-stone-600">
+                Location
+                <span className="mt-1.5 flex items-center gap-2 rounded-xl border border-stone-200 px-3">
+                  <MapPin size={16} className="text-stone-400" />
+                  <input
+                    value={location}
+                    onChange={(event) => setLocation(event.target.value)}
+                    placeholder="Any location"
+                    className="min-w-0 flex-1 bg-transparent py-2.5 text-sm outline-none"
+                  />
+                </span>
+              </label>
+
+              <label className="text-xs font-medium text-stone-600">
+                Work mode
+                <select
+                  value={workMode}
+                  onChange={(event) => setWorkMode(event.target.value)}
+                  className="mt-1.5 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-400"
+                >
+                  <option value="">Any work mode</option>
+                  <option value="remote">Remote</option>
+                  <option value="hybrid">Hybrid</option>
+                  <option value="onsite">On-site</option>
+                </select>
+              </label>
+
+              <label className="text-xs font-medium text-stone-600">
+                Minimum salary (LPA)
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={minSalary}
+                  onChange={(event) => setMinSalary(event.target.value)}
+                  placeholder="e.g. 12"
+                  className="mt-1.5 w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400"
+                />
+              </label>
+            </div>
+
+            <p className="text-xs text-stone-400">
+              Tip: include a role, skills, location, work mode, and salary in
+              your request for better matches.
+            </p>
+          </form>
+        </section>
+
+        <section>
+          <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+            <div>
+              <h2 className="text-xl font-bold text-[#312E81]">
+                {searched ? "Search results" : "Available opportunities"}
+              </h2>
+              <p className="mt-1 text-sm text-stone-500">
+                {loading
+                  ? "Loading jobs..."
+                  : `${jobs.length} ${jobs.length === 1 ? "job" : "jobs"} found`}
+              </p>
+            </div>
+          </div>
+
+          {error && (
+            <div
+              role="alert"
+              className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+            >
+              {error}
+            </div>
+          )}
+
+          {!loading && !error && jobs.length === 0 && (
+            <div className="rounded-2xl border border-dashed border-violet-200 bg-white p-10 text-center">
+              <Search className="mx-auto text-violet-400" size={28} />
+              <h3 className="mt-3 font-semibold text-[#312E81]">
+                No matching jobs found
+              </h3>
+              <p className="mt-1 text-sm text-stone-500">
+                Try broadening your search or adjusting your filters.
+              </p>
+            </div>
+          )}
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            {jobs.map((job) => (
+              <article
+                key={job.id}
+                className="rounded-2xl border border-stone-200/80 bg-white p-5 shadow-sm transition hover:border-violet-200"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-[#7C3AED]">
+                      <BriefcaseBusiness size={20} />
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-[#312E81]">
+                        {job.title}
+                      </h3>
+                      <p className="mt-1 text-sm text-stone-500">
+                        {job.company_name || "Company not listed"}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    title="Save job (coming soon)"
+                    onClick={() =>
+                      setError("Saving jobs will be available in a later phase.")
+                    }
+                    className="rounded-lg p-2 text-stone-400 hover:bg-violet-50 hover:text-[#7C3AED]"
+                  >
+                    <Bookmark size={18} />
+                  </button>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2 text-xs text-stone-600">
+                  {job.location && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-stone-50 px-2.5 py-1.5">
+                      <MapPin size={13} />
+                      {job.location}
+                    </span>
+                  )}
+                  {job.work_mode && (
+                    <span className="rounded-full bg-violet-50 px-2.5 py-1.5 text-violet-800">
+                      {job.work_mode}
+                    </span>
+                  )}
+                  {(job.min_salary_lpa != null ||
+                    job.max_salary_lpa != null) && (
+                    <span className="rounded-full bg-orange-50 px-2.5 py-1.5 text-orange-800">
+                      {job.min_salary_lpa ?? "—"}–{job.max_salary_lpa ?? "—"} LPA
+                    </span>
+                  )}
+                </div>
+
+                {job.description && (
+                  <p className="mt-4 line-clamp-3 text-sm leading-6 text-stone-600">
+                    {job.description}
+                  </p>
+                )}
+
+                <div className="mt-5 flex justify-end border-t border-stone-100 pt-4">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setError(
+                        `Job details for "${job.title}" will be available in a later phase.`,
+                      )
+                    }
+                    className="inline-flex items-center gap-2 text-sm font-semibold text-[#7C3AED] hover:text-[#312E81]"
+                  >
+                    View details <ArrowUpRight size={16} />
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function NavItem({
+  icon,
+  label,
+  active = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  active?: boolean;
+}) {
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium ${
+        active
+          ? "bg-violet-50 text-[#312E81]"
+          : "text-stone-500 hover:bg-stone-50 hover:text-[#7C3AED]"
+      }`}
+    >
+      {icon}
+      {label}
+    </div>
+  );
+}

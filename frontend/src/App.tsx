@@ -82,12 +82,12 @@ export default function App() {
       if (data.user?.role === "recruiter") {
         await navigate({ to: "/recruiter/dashboard" });
       } else if (data.user?.role === "candidate") {
-        setMessage("Login successful! Your candidate dashboard is coming next.");
+        await navigate({ to: "/candidate/dashboard" });
       } else if (data.user?.role === "admin") {
         setMessage("Login successful! Admin access will be added later.");
       } else {
         setError("Your account has an unrecognized role.");
-      }   
+      } 
     } catch (err) {
       if (err instanceof TypeError) {
         setError(

@@ -136,6 +136,7 @@ async function handleSearch() {
       min_experience: number;
       max_ctc_lpa: number;
       available_within_days: number;
+      min_candidate_score: number;
     } = await parseResponse.json();
 
     // 2. Show the filters returned by Gemini.
@@ -164,7 +165,11 @@ async function handleSearch() {
         `Available within ${filters.available_within_days} days`
       );
     }
-
+    if (filters.min_candidate_score > 0) {
+      visibleFilters.push(
+        `Minimum Candidate Score: ${filters.min_candidate_score}`
+      );
+    }
     setActiveFilters(visibleFilters);
 
     // 3. Send Gemini's filters to the existing candidate-search API.
@@ -192,7 +197,12 @@ async function handleSearch() {
         String(filters.available_within_days)
       );
     }
-
+    if (filters.min_candidate_score > 0) {
+      params.set(
+        "min_candidate_score",
+        String(filters.min_candidate_score)
+      );
+    }
     params.set("limit", "50");
 
     const response = await fetch(

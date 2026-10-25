@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RegisterRouteImport } from './routes/register'
+import { Route as CandidateDashboardRouteImport } from './routes/candidate.dashboard'
 import { Route as RecruiterDashboardRouteImport } from './routes/recruiter.dashboard'
 
 const IndexRoute = IndexRouteImport.update({
@@ -23,6 +24,11 @@ const RegisterRoute = RegisterRouteImport.update({
   path: '/register',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CandidateDashboardRoute = CandidateDashboardRouteImport.update({
+  id: '/candidate/dashboard',
+  path: '/candidate/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RecruiterDashboardRoute = RecruiterDashboardRouteImport.update({
   id: '/recruiter/dashboard',
   path: '/recruiter/dashboard',
@@ -32,30 +38,39 @@ const RecruiterDashboardRoute = RecruiterDashboardRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/register': typeof RegisterRoute
+  '/candidate/dashboard': typeof CandidateDashboardRoute
   '/recruiter/dashboard': typeof RecruiterDashboardRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/register': typeof RegisterRoute
+  '/candidate/dashboard': typeof CandidateDashboardRoute
   '/recruiter/dashboard': typeof RecruiterDashboardRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/register': typeof RegisterRoute
+  '/candidate/dashboard': typeof CandidateDashboardRoute
   '/recruiter/dashboard': typeof RecruiterDashboardRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/register' | '/recruiter/dashboard'
+  fullPaths: '/' | '/register' | '/candidate/dashboard' | '/recruiter/dashboard'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/register' | '/recruiter/dashboard'
-  id: '__root__' | '/' | '/register' | '/recruiter/dashboard'
+  to: '/' | '/register' | '/candidate/dashboard' | '/recruiter/dashboard'
+  id:
+    | '__root__'
+    | '/'
+    | '/register'
+    | '/candidate/dashboard'
+    | '/recruiter/dashboard'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   RegisterRoute: typeof RegisterRoute
+  CandidateDashboardRoute: typeof CandidateDashboardRoute
   RecruiterDashboardRoute: typeof RecruiterDashboardRoute
 }
 
@@ -75,6 +90,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RegisterRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/candidate/dashboard': {
+      id: '/candidate/dashboard'
+      path: '/candidate/dashboard'
+      fullPath: '/candidate/dashboard'
+      preLoaderRoute: typeof CandidateDashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/recruiter/dashboard': {
       id: '/recruiter/dashboard'
       path: '/recruiter/dashboard'
@@ -88,6 +110,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   RegisterRoute: RegisterRoute,
+  CandidateDashboardRoute: CandidateDashboardRoute,
   RecruiterDashboardRoute: RecruiterDashboardRoute,
 }
 export const routeTree = rootRouteImport
