@@ -33,18 +33,194 @@ type JobSearchFilters = {
   min_experience: number;
 };
 
+type SavedJob = Job & {
+  saved_at?: string;
+};
+
+
+
+function parseJobSearchWithRegex(query: string): JobSearchFilters {
+  const text = query.trim();
+
+  const salaryMatch = text.match(
+    /\b(?:at least|minimum|min(?:imum)? salary(?: of)?|paying(?: at least)?|above|over)?\s*₹?\s*(\d+(?:\.\d+)?)\s*(?:lpa|lakhs?|lac)\b/i,
+  );
+
+  const experienceMatch = text.match(
+    /\b(\d+)\s*\+?\s*(?:years?|yrs?)(?:\s+of)?(?:\s+experience|\s+exp)?\b/i,
+  );
+
+  const locationMatch = text.match(
+    /\b(?:in|based in|located in)\s+([a-z]+(?:[\s,]+[a-z]+){0,2}?)(?=\s+(?:paying|with|who|having|at least|for|remote|hybrid|onsite|on-site)\b|[,.;]|$)/i,
+  );
+
+  const location = locationMatch?.[1]?.trim() ?? "";
+
+  let workMode = "";
+  if (/\bremote\b/i.test(text)) {
+    workMode = "remote";
+  } else if (/\bhybrid\b/i.test(text)) {
+    workMode = "hybrid";
+  } else if (/\b(on[- ]?site|in[- ]office)\b/i.test(text)) {
+    workMode = "onsite";
+  }
+
+  const knownSkills = [
+    "machine learning",
+    "data engineering",
+    "javascript",
+    "typescript",
+    "postgresql",
+    "mongodb",
+    "kubernetes",
+    "node.js",
+    "nodejs",
+    "react",
+    "python",
+    "golang",
+    "java",
+    "docker",
+    "figma",
+    "ui/ux",
+    "sql",
+    "go",
+  ];
+
+  const skills = knownSkills
+    .filter((skill) => {
+      const escaped = skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(text);
+    })
+    .map((skill) =>
+      skill === "nodejs" ? "Node.js" : skill === "go" ? "Go" : skill,
+    );
+
+  let title = text
+    .replace(/\b(find|search for|search|show me|show|get me|please|looking for|look for)\b/gi, " ")
+    .replace(/\b(?:in|based in|located in)\s+[a-z]+(?:[\s,]+[a-z]+){0,2}(?=\s+(?:paying|with|who|having|at least|for|remote|hybrid|onsite|on-site)\b|[,.;]|$)/gi, " ")
+    .replace(/\b(?:paying|earning)\b.*$/i, " ")
+    .replace(/\b(?:at least|minimum|min(?:imum)? salary(?: of)?|above|over)\b/gi, " ")
+    .replace(/₹?\s*\d+(?:\.\d+)?\s*(?:lpa|lakhs?|lac)\b/gi, " ")
+    .replace(/\b\d+\s*\+?\s*(?:years?|yrs?)(?:\s+of)?(?:\s+experience|\s+exp)?\b/gi, " ")
+    .replace(/\b(?:remote|hybrid|onsite|on[- ]?site|in[- ]office)\b/gi, " ")
+    .replace(/\b(?:jobs?|opportunities|positions|roles)\b/gi, " ")
+    .replace(/[,.!?]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Keep the title useful when the query is mostly filters.
+  if (!title) {
+    title = skills.join(" ");
+  }
+
+  return {
+    title,
+    location,
+    min_salary_lpa: salaryMatch ? Number(salaryMatch[1]) : 0,
+    work_mode: workMode,
+    skills,
+    min_experience: experienceMatch ? Number(experienceMatch[1]) : 0,
+  };
+}
+
+
+
 export const Route = createFileRoute("/candidate/dashboard")({
   component: CandidateDashboard,
 });
 
 function CandidateDashboard() {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [savedJobIds, setSavedJobIds] = useState<number[]>([]);
+  const [savedJobs, setSavedJobs] = useState<SavedJob[]>([]);
+  const [showSavedJobs, setShowSavedJobs] = useState(false);
   const [search, setSearch] = useState("");
+  const [isListening, setIsListening] = useState(false);
+
+function startVoiceSearch() {
+  const SpeechRecognitionAPI = (
+    window as Window & {
+      SpeechRecognition?: new () => {
+        lang: string;
+        continuous: boolean;
+        interimResults: boolean;
+        onresult: ((event: {
+          results: { [index: number]: { [index: number]: { transcript: string } } } & { length: number };
+        }) => void) | null;
+        onerror: (() => void) | null;
+        onend: (() => void) | null;
+        start: () => void;
+      };
+      webkitSpeechRecognition?: new () => {
+        lang: string;
+        continuous: boolean;
+        interimResults: boolean;
+        onresult: ((event: {
+          results: { [index: number]: { [index: number]: { transcript: string } } } & { length: number };
+        }) => void) | null;
+        onerror: (() => void) | null;
+        onend: (() => void) | null;
+        start: () => void;
+      };
+    }
+  ).SpeechRecognition || (
+    window as Window & {
+      webkitSpeechRecognition?: new () => {
+        lang: string;
+        continuous: boolean;
+        interimResults: boolean;
+        onresult: ((event: {
+          results: { [index: number]: { [index: number]: { transcript: string } } } & { length: number };
+        }) => void) | null;
+        onerror: (() => void) | null;
+        onend: (() => void) | null;
+        start: () => void;
+      };
+    }
+  ).webkitSpeechRecognition;
+
+  if (!SpeechRecognitionAPI) {
+    setError("Voice search isn't supported in this browser. Try Chrome.");
+    return;
+  }
+
+  const recognition = new SpeechRecognitionAPI();
+  recognition.lang = "en-IN";
+  recognition.continuous = false;
+  recognition.interimResults = false;
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    setSearch(transcript);
+    setError("");
+    setNotice("Voice search captured. Click Search to find matching jobs.");
+  };
+
+  recognition.onerror = () => {
+    setError("Couldn't capture your voice. Please allow microphone access and try again.");
+    setIsListening(false);
+  };
+
+  recognition.onend = () => setIsListening(false);
+
+  setError("");
+  setNotice("Listening… speak your job search now.");
+  setIsListening(true);
+
+  try {
+    recognition.start();
+  } catch {
+    setIsListening(false);
+    setError("Voice search couldn't start. Please try again.");
+  }
+}
   const [location, setLocation] = useState("");
   const [workMode, setWorkMode] = useState("");
   const [minSalary, setMinSalary] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [searched, setSearched] = useState(false);
 
   async function loadJobs(filters?: JobSearchFilters) {
@@ -101,13 +277,68 @@ function CandidateDashboard() {
     }
   }
 
+  
 
+async function loadSavedJobs() {
+  try {
+    const response = await fetch(
+      "http://localhost:8080/api/v1/candidate/saved-jobs",
+      { credentials: "include" },
+    );
+
+    if (!response.ok) {
+      throw new Error("Unable to load saved jobs.");
+    }
+
+    const data: { jobs?: SavedJob[] } = await response.json();
+    const loadedJobs = data.jobs ?? [];
+
+    setSavedJobs(loadedJobs);
+    setSavedJobIds(loadedJobs.map((job) => job.id));
+  } catch (err) {
+    console.error("Unable to load saved jobs:", err);
+    setError("Unable to load your saved jobs. Please try again.");
+  }
+}
+
+
+
+async function toggleSavedJob(jobId: number) {
+  const isSaved = savedJobIds.includes(jobId);
+
+  try {
+    const response = await fetch(
+      `http://localhost:8080/api/v1/candidate/saved-jobs/${jobId}`,
+      {
+        method: isSaved ? "DELETE" : "POST",
+        credentials: "include",
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error("Unable to update saved job.");
+    }
+
+    setSavedJobIds((current) =>
+      isSaved
+        ? current.filter((id) => id !== jobId)
+        : [...current, jobId],
+    );
+    void loadSavedJobs();
+
+    setError("");
+    setNotice(isSaved ? "Job removed from saved jobs." : "Job saved successfully.");
+  } catch {
+    setError("Unable to update saved job. Please try again.");
+  }
+}
 
 async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
   event.preventDefault();
   setSearched(true);
   setLoading(true);
   setError("");
+  setNotice("");
 
   try {
     if (!search.trim()) {
@@ -133,26 +364,16 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
       }
 
       filters = await parseResponse.json();
-    } catch (parseError) {
-      console.warn(
-        "AI search unavailable; using basic keyword search instead.",
-        parseError,
-      );
+      
 
-      // Fallback: search by the user's words and manual filters.
-      filters = {
-        title: search.trim(),
-        location: "",
-        min_salary_lpa: 0,
-        work_mode: "",
-        skills: [],
-        min_experience: 0,
-      };
+} catch {
+  filters = parseJobSearchWithRegex(search.trim());
 
-      setError(
-        "AI search was temporarily unavailable. Showing basic keyword results instead.",
-      );
-    }
+  setNotice(
+    "AI search is temporarily unavailable. We used local search instead.",
+  );
+}
+
 
     await loadJobs(filters);
   } catch (err) {
@@ -167,6 +388,7 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
 
   useEffect(() => {
     void loadJobs();
+    void loadSavedJobs();
   }, []);
 
   return (
@@ -186,11 +408,46 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
         </p>
 
         <nav className="space-y-1">
-          <NavItem icon={<BriefcaseBusiness size={18} />} label="Overview" active />
-          <NavItem icon={<Search size={18} />} label="Find jobs" />
-          <NavItem icon={<Building2 size={18} />} label="Find companies" />
-          <NavItem icon={<Bookmark size={18} />} label="Saved jobs" />
-          <NavItem icon={<UserRound size={18} />} label="My profile" />
+          
+        <button
+        type="button"
+        onClick={() => setShowSavedJobs(false)}
+        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium ${
+            !showSavedJobs
+            ? "bg-violet-50 text-[#312E81]"
+            : "text-stone-500 hover:bg-stone-50 hover:text-[#7C3AED]"
+        }`}
+        >
+        <BriefcaseBusiness size={18} />
+        Overview
+        </button>
+
+        <button
+        type="button"
+        onClick={() => setShowSavedJobs(false)}
+        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-stone-500 hover:bg-stone-50 hover:text-[#7C3AED]"
+        >
+        <Search size={18} />
+        Find jobs
+        </button>
+
+        <NavItem icon={<Building2 size={18} />} label="Find companies" />
+
+        <button
+        type="button"
+        onClick={() => setShowSavedJobs(true)}
+        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium ${
+            showSavedJobs
+            ? "bg-violet-50 text-[#312E81]"
+            : "text-stone-500 hover:bg-stone-50 hover:text-[#7C3AED]"
+        }`}
+        >
+        <Bookmark size={18} />
+        Saved jobs
+        </button>
+
+        <NavItem icon={<UserRound size={18} />} label="My profile" />
+
         </nav>
 
         <div className="mt-10 rounded-2xl bg-[#FFF7ED] p-4">
@@ -247,14 +504,17 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
                   className="min-w-0 flex-1 bg-transparent py-3 text-sm outline-none"
                 />
                 <button
-                  type="button"
-                  title="Voice search coming soon"
-                  onClick={() =>
-                    setError("Voice search is planned for a later phase.")
-                  }
-                  className="rounded-lg p-2 text-stone-400 hover:bg-violet-50"
+                type="button"
+                title={isListening ? "Listening..." : "Search using your voice"}
+                aria-label="Search using your voice"
+                onClick={startVoiceSearch}
+                className={`rounded-lg p-2 ${
+                    isListening
+                    ? "bg-violet-100 text-violet-700"
+                    : "text-stone-500 hover:bg-violet-50"
+                }`}
                 >
-                  <Mic size={18} />
+                <Mic size={18} />
                 </button>
               </div>
               <button
@@ -320,7 +580,11 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
           <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
             <div>
               <h2 className="text-xl font-bold text-[#312E81]">
-                {searched ? "Search results" : "Available opportunities"}
+                {showSavedJobs
+                ? "Saved jobs"
+                : searched
+                    ? "Search results"
+                    : "Available opportunities"}
               </h2>
               <p className="mt-1 text-sm text-stone-500">
                 {loading
@@ -338,6 +602,14 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
               {error}
             </div>
           )}
+          {notice && (
+            <div
+                role="status"
+                className="mb-4 rounded-xl border border-violet-100 bg-violet-50 p-3 text-sm text-violet-800"
+            >
+                {notice}
+            </div>
+            )}
 
           {!loading && !error && jobs.length === 0 && (
             <div className="rounded-2xl border border-dashed border-violet-200 bg-white p-10 text-center">
@@ -351,8 +623,74 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
             </div>
           )}
 
-          <div className="grid gap-4 xl:grid-cols-2">
-            {jobs.map((job) => (
+          {selectedJob ? (
+  <div className="rounded-2xl border border-violet-100 bg-white p-6 shadow-sm">
+    <button
+      type="button"
+      onClick={() => setSelectedJob(null)}
+      className="mb-6 text-sm font-semibold text-[#7C3AED] hover:text-[#312E81]"
+    >
+      ← Back to jobs
+    </button>
+
+    <div className="mb-5">
+      <p className="mb-2 text-sm font-medium text-violet-600">
+        Job details
+      </p>
+      <h3 className="text-2xl font-bold text-[#312E81]">
+        {selectedJob.title}
+      </h3>
+      <p className="mt-2 flex items-center gap-2 text-stone-600">
+        <Building2 size={16} />
+        {selectedJob.company_name || "Company not specified"}
+      </p>
+      <p className="mt-2 flex items-center gap-2 text-stone-600">
+        <MapPin size={16} />
+        {selectedJob.location || "Location not specified"}
+      </p>
+    </div>
+
+    <div className="mb-6 grid gap-3 sm:grid-cols-2">
+      <div className="rounded-xl bg-violet-50 p-4">
+        <p className="text-sm text-stone-500">Salary range</p>
+        <p className="mt-1 font-semibold text-[#312E81]">
+          {selectedJob.min_salary_lpa != null ||
+          selectedJob.max_salary_lpa != null
+            ? `${selectedJob.min_salary_lpa ?? "—"}–${selectedJob.max_salary_lpa ?? "—"} LPA`
+            : "Not specified"}
+        </p>
+      </div>
+
+      <div className="rounded-xl bg-violet-50 p-4">
+        <p className="text-sm text-stone-500">Work mode</p>
+        <p className="mt-1 font-semibold capitalize text-[#312E81]">
+          {selectedJob.work_mode || "Not specified"}
+        </p>
+      </div>
+    </div>
+
+    <div>
+      <h4 className="mb-2 font-semibold text-[#312E81]">
+        Job description
+      </h4>
+      <p className="whitespace-pre-wrap text-sm leading-7 text-stone-600">
+        {selectedJob.description || "No job description is available yet."}
+      </p>
+    </div>
+
+    <button
+      type="button"
+      onClick={() => void toggleSavedJob(selectedJob.id)}
+      className="mt-6 rounded-xl bg-[#7C3AED] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#312E81]"
+    >
+      {savedJobIds.includes(selectedJob.id)
+        ? "Remove from saved jobs"
+        : "Save this job"}
+    </button>
+  </div>
+) : (
+  <div className="grid gap-4 xl:grid-cols-2">
+            {(showSavedJobs ? savedJobs : jobs).map((job) => (
               <article
                 key={job.id}
                 className="rounded-2xl border border-stone-200/80 bg-white p-5 shadow-sm transition hover:border-violet-200"
@@ -371,16 +709,33 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
                       </p>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    title="Save job (coming soon)"
-                    onClick={() =>
-                      setError("Saving jobs will be available in a later phase.")
-                    }
-                    className="rounded-lg p-2 text-stone-400 hover:bg-violet-50 hover:text-[#7C3AED]"
-                  >
-                    <Bookmark size={18} />
-                  </button>
+                  
+                <button
+                type="button"
+                title={
+                    savedJobIds.includes(job.id)
+                    ? "Remove saved job"
+                    : "Save job"
+                }
+                aria-label={
+                    savedJobIds.includes(job.id)
+                    ? `Remove ${job.title} from saved jobs`
+                    : `Save ${job.title}`
+                }
+                aria-pressed={savedJobIds.includes(job.id)}
+                onClick={() => void toggleSavedJob(job.id)}
+                className={`rounded-lg p-2 transition hover:bg-violet-50 ${
+                    savedJobIds.includes(job.id)
+                    ? "text-[#7C3AED]"
+                    : "text-stone-400 hover:text-[#7C3AED]"
+                }`}
+                >
+                <Bookmark
+                    size={18}
+                    fill={savedJobIds.includes(job.id) ? "currentColor" : "none"}
+                />
+                </button>
+
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-2 text-xs text-stone-600">
@@ -412,19 +767,20 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
                 <div className="mt-5 flex justify-end border-t border-stone-100 pt-4">
                   <button
                     type="button"
-                    onClick={() =>
-                      setError(
-                        `Job details for "${job.title}" will be available in a later phase.`,
-                      )
-                    }
+                    onClick={() => {
+                    setSelectedJob(job);
+                    setError("");
+                    setNotice("");
+                    }}
                     className="inline-flex items-center gap-2 text-sm font-semibold text-[#7C3AED] hover:text-[#312E81]"
                   >
                     View details <ArrowUpRight size={16} />
                   </button>
                 </div>
               </article>
-            ))}
+                        ))}
           </div>
+          )}
         </section>
       </main>
     </div>

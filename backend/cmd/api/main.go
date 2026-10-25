@@ -100,7 +100,18 @@ func main() {
 	router.With(handlers.RequireAuth(pool, "candidate")).
 		Get("/api/v1/candidate/jobs", jobSearchHandler.Search)
 	router.With(handlers.RequireAuth(pool, "candidate")).
-	Post("/api/v1/candidate/parse-search", nlpHandler.ParseJobSearch)
+		Post("/api/v1/candidate/parse-search", nlpHandler.ParseJobSearch)
+
+	savedJobsHandler := &handlers.SavedJobsHandler{DB: pool}
+
+	router.With(handlers.RequireAuth(pool, "candidate")).
+		Get("/api/v1/candidate/saved-jobs", savedJobsHandler.List)
+
+	router.With(handlers.RequireAuth(pool, "candidate")).
+		Post("/api/v1/candidate/saved-jobs/{jobID}", savedJobsHandler.Save)
+
+	router.With(handlers.RequireAuth(pool, "candidate")).
+		Delete("/api/v1/candidate/saved-jobs/{jobID}", savedJobsHandler.Unsave)
 
 	// API health check.
 	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {

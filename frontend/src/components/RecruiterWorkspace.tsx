@@ -1,4 +1,4 @@
-import { useState } from "react";
+
 import {
   Activity,
   Bell,
@@ -21,6 +21,7 @@ import {
   Workflow,
   LogOut,
 } from "lucide-react";
+import { useState, useRef } from "react";
 
 
 const navigation = [
@@ -77,6 +78,73 @@ type CandidateSearchResponse = {
   count: number;
   candidates: Candidate[];
 };
+type RecruiterFilters = {
+  location: string;
+  skills: string[];
+  min_experience: number;
+  max_ctc_lpa: number;
+  available_within_days: number;
+  min_candidate_score: number;
+};
+
+function parseRecruiterSearchWithRegex(query: string): RecruiterFilters {
+  const q = query.toLowerCase();
+  const filters: RecruiterFilters = {
+    location: "",
+    skills: [],
+    min_experience: 0,
+    max_ctc_lpa: 0,
+    available_within_days: 0,
+    min_candidate_score: 0,
+  };
+
+  const locations = [
+    "Mumbai", "Pune", "Bengaluru", "Bangalore", "Hyderabad",
+    "Chennai", "Delhi", "Noida", "Gurugram", "Gurgaon",
+  ];
+  filters.location =
+    locations.find((location) => q.includes(location.toLowerCase())) ?? "";
+
+  const experience = q.match(
+    /(?:at least|minimum|min\.?)?\s*(\d{1,2})\s*\+?\s*(?:years?|yrs?)(?:\s+of)?\s+(?:experience|exp)/i,
+  );
+  if (experience) filters.min_experience = Number(experience[1]);
+
+  const ctc = q.match(
+    /(?:below|under|maximum|max\.?|up to|at most|ctc\s*(?:of|under|below)?|salary\s*(?:of|under|below)?)\s*(?:₹|rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:lpa|lakhs?|l)?/i,
+  );
+  if (ctc) filters.max_ctc_lpa = Number(ctc[1]);
+
+  const availability = q.match(
+    /(?:within|in|available in|available within)\s*(\d{1,3})\s*days?/i,
+  );
+  if (availability) filters.available_within_days = Number(availability[1]);
+
+const score = q.match(
+  /(?:score|scored|rating)\s*(?:of\s+)?(?:at least|above|over|minimum|min\.?)?\s*(\d{2,3})/i,
+);
+
+if (score) {
+  const value = Number(score[1]);
+  if (value >= 80 && value <= 100) {
+    filters.min_candidate_score = value;
+  }
+}
+
+  const knownSkills = [
+    "JavaScript", "TypeScript", "React", "Node.js", "Python",
+    "Java", "Go", "Golang", "PHP", "MongoDB", "PostgreSQL",
+    "SQL", "AWS", "Docker", "Kubernetes", "Angular", "Vue",
+    "Express", "Django", "FastAPI",
+  ];
+  filters.skills = knownSkills.filter((skill) =>
+    new RegExp(
+      `(^|[^a-z0-9])${skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").toLowerCase()}([^a-z0-9]|$)`,
+    ).test(q),
+  );
+
+  return filters;
+}
 interface RecruiterWorkspaceProps {
   onLogout: () => void;
   signingOut: boolean;
@@ -95,7 +163,69 @@ export default function RecruiterWorkspace({
     const [resultCount, setResultCount] = useState<number | null>(null);
     const [isSearching, setIsSearching] = useState(false);
     const [searchError, setSearchError] = useState("");
+    const [isListening, setIsListening] = useState(false);
+const recognitionRef = useRef<{
+  start: () => void;
+  abort: () => void;
+} | null>(null);
 
+function startVoiceSearch() {
+  type RecognitionResult = {
+    results: ArrayLike<ArrayLike<{ transcript: string }>>;
+  };
+  type RecognitionInstance = {
+    lang: string;
+    continuous: boolean;
+    interimResults: boolean;
+    onresult: ((event: RecognitionResult) => void) | null;
+    onerror: (() => void) | null;
+    onend: (() => void) | null;
+    start: () => void;
+    abort: () => void;
+  };
+  type RecognitionConstructor = new () => RecognitionInstance;
+
+  const browserWindow = window as Window & {
+    SpeechRecognition?: RecognitionConstructor;
+    webkitSpeechRecognition?: RecognitionConstructor;
+  };
+  const SpeechRecognitionAPI =
+    browserWindow.SpeechRecognition ?? browserWindow.webkitSpeechRecognition;
+
+  if (!SpeechRecognitionAPI) {
+    setSearchError("Voice search isn't supported in this browser. Try Chrome.");
+    return;
+  }
+
+  const recognition = new SpeechRecognitionAPI();
+  recognitionRef.current = recognition;
+  recognition.lang = "en-IN";
+  recognition.continuous = false;
+  recognition.interimResults = false;
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    setSearchText(transcript);
+    setSearchError("");
+  };
+
+  recognition.onerror = () => {
+    setSearchError("Voice capture failed. Check microphone permission and retry.");
+    setIsListening(false);
+  };
+
+  recognition.onend = () => setIsListening(false);
+
+  setSearchError("");
+  setIsListening(true);
+
+  try {
+    recognition.start();
+  } catch {
+    setIsListening(false);
+    setSearchError("Couldn't start voice search. Please try again.");
+  }
+}
    
 async function handleSearch() {
   setIsSearching(true);
@@ -105,39 +235,47 @@ async function handleSearch() {
   setActiveFilters([]);
 
   try {
-    // 1. Ask Gemini to interpret the recruiter request.
-    const parseResponse = await fetch(
-      "http://localhost:8080/api/v1/recruiter/parse-search",
-      {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ query: searchText.trim() }),
-      }
+    let filters: RecruiterFilters;
+
+try {
+  const parseResponse = await fetch(
+    "http://localhost:8080/api/v1/recruiter/parse-search",
+    {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ query: searchText.trim() }),
+    },
+  );
+
+  if (parseResponse.status === 401 || parseResponse.status === 403) {
+    throw new Error(
+      "Your recruiter session is no longer valid. Please sign in again.",
     );
+  }
 
-    if (parseResponse.status === 401 || parseResponse.status === 403) {
-      throw new Error(
-        "Your recruiter session is no longer valid. Please sign in again."
-      );
-    }
+  if (!parseResponse.ok) {
+    throw new Error("Gemini parser unavailable");
+  }
 
-    if (!parseResponse.ok) {
-      const message = await parseResponse.text();
-      throw new Error(message || "Unable to interpret your search request.");
-    }
+  filters = await parseResponse.json();
+} catch (error) {
+  if (
+    error instanceof Error &&
+    error.message.includes("session is no longer valid")
+  ) {
+    throw error;
+  }
 
-    const filters: {
-      location: string;
-      skills: string[];
-      min_experience: number;
-      max_ctc_lpa: number;
-      available_within_days: number;
-      min_candidate_score: number;
-    } = await parseResponse.json();
+  filters = parseRecruiterSearchWithRegex(searchText.trim());
+  setActiveFilters(["⚠ Gemini unavailable — local regex fallback used"]);
+  setSearchError(
+    "Gemini timed out or failed. Local regex fallback was used for this search.",
+  );
+  }
 
     // 2. Show the filters returned by Gemini.
     const visibleFilters: string[] = [];
@@ -204,7 +342,7 @@ async function handleSearch() {
       );
     }
     params.set("limit", "50");
-
+    console.log("Recruiter search filters being sent:", filters);
     const response = await fetch(
       `http://localhost:8080/api/v1/recruiter/candidates?${params.toString()}`,
       {
@@ -429,9 +567,15 @@ async function handleSearch() {
                     />
 
                   <div className="mt-4 flex items-center justify-between gap-2 border-t border-stone-100 pt-3">
-                    <span className="inline-flex items-center gap-1.5 text-[11px] text-stone-400">
-                      <Mic size={14} /> Voice search planned
-                    </span>
+                    <button
+                    type="button"
+                    onClick={startVoiceSearch}
+                    disabled={isListening || isSearching}
+                    className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] text-violet-700 hover:bg-violet-50 disabled:opacity-60"
+                  >
+                    <Mic size={14} />
+                    {isListening ? "Listening..." : "Search by voice"}
+                  </button>
                     
                         <button
                         type="button"

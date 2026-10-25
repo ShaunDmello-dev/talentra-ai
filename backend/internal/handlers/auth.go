@@ -3,15 +3,15 @@ package handlers
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 	"time"
 
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
@@ -22,15 +22,16 @@ type AuthHandler struct {
 }
 
 type registerRequest struct {
-	FullName  string `json:"fullName"`
-	Email     string `json:"email"`
-	Password  string `json:"password"`
-	Role      string `json:"role"`
+	FullName    string `json:"fullName"`
+	Email       string `json:"email"`
+	Password    string `json:"password"`
+	Role        string `json:"role"`
 	CompanyName string `json:"companyName"`
 }
+
 type loginRequest struct {
-    Email    string `json:"email"`
-    Password string `json:"password"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
 type registerResponse struct {
@@ -50,7 +51,6 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	defer r.Body.Close()
 
@@ -88,7 +88,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Role == "recruiter" && (req.CompanyName == "" || len(req.CompanyName) > 160) {
+	if req.Role == "recruiter" &&
+		(req.CompanyName == "" || len(req.CompanyName) > 160) {
 		http.Error(w, "Please provide a valid company name", http.StatusBadRequest)
 		return
 	}
@@ -96,7 +97,10 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	passwordHash, err := bcrypt.GenerateFromPassword(
+		[]byte(req.Password),
+		bcrypt.DefaultCost,
+	)
 	if err != nil {
 		http.Error(w, "Unable to create account", http.StatusInternalServerError)
 		return
@@ -125,6 +129,19 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Create the candidate profile in the same transaction as the user.
+	if req.Role == "candidate" {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO public.candidates (user_id, full_name, email, source)
+			VALUES ($1, $2, $3, 'synthetic')
+		`, userID, req.FullName, req.Email)
+
+		if err != nil {
+			http.Error(w, "Unable to create account", http.StatusInternalServerError)
+			return
+		}
+	}
+
 	var companyID *int64
 	if req.Role == "recruiter" {
 		var id int64
@@ -133,6 +150,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 			VALUES ($1)
 			RETURNING id
 		`, req.CompanyName).Scan(&id)
+
 		if err != nil {
 			http.Error(w, "Unable to create account", http.StatusInternalServerError)
 			return
@@ -159,113 +177,113 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 }
 
 func isUniqueViolation(err error) bool {
-    var pgErr *pgconn.PgError
-    return errors.As(err, &pgErr) && pgErr.Code == "23505"
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
+
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost {
-        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-        return
-    }
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
-    r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-    defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	defer r.Body.Close()
 
-    var req loginRequest
-    decoder := json.NewDecoder(r.Body)
-    decoder.DisallowUnknownFields()
+	var req loginRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
 
-    if err := decoder.Decode(&req); err != nil {
-        http.Error(w, "Invalid request body", http.StatusBadRequest)
-        return
-    }
+	if err := decoder.Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
 
-    req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
-    if req.Email == "" || req.Password == "" {
-        http.Error(w, "Email and password are required", http.StatusBadRequest)
-        return
-    }
+	if req.Email == "" || req.Password == "" {
+		http.Error(w, "Email and password are required", http.StatusBadRequest)
+		return
+	}
 
-    ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
 
-    var user struct {
-        ID           int64
-        FullName     string
-        Email        string
-        PasswordHash string
-        Role         string
-    }
+	var user struct {
+		ID           int64
+		FullName     string
+		Email        string
+		PasswordHash string
+		Role         string
+	}
 
-    err := h.DB.QueryRow(ctx, `
-        SELECT id, COALESCE(full_name, ''), email, password_hash, role
-        FROM public.users
-        WHERE email = $1
-    `, req.Email).Scan(
-        &user.ID,
-        &user.FullName,
-        &user.Email,
-        &user.PasswordHash,
-        &user.Role,
-    )
+	err := h.DB.QueryRow(ctx, `
+		SELECT id, COALESCE(full_name, ''), email, password_hash, role
+		FROM public.users
+		WHERE email = $1
+	`, req.Email).Scan(
+		&user.ID,
+		&user.FullName,
+		&user.Email,
+		&user.PasswordHash,
+		&user.Role,
+	)
 
-    if err != nil || bcrypt.CompareHashAndPassword(
-        []byte(user.PasswordHash),
-        []byte(req.Password),
-    ) != nil {
-        http.Error(w, "Invalid email or password", http.StatusUnauthorized)
-        return
-    }
+	if err != nil || bcrypt.CompareHashAndPassword(
+		[]byte(user.PasswordHash),
+		[]byte(req.Password),
+	) != nil {
+		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+		return
+	}
 
-    // Generate a cryptographically secure session token.
-    tokenBytes := make([]byte, 32)
-    if _, err := rand.Read(tokenBytes); err != nil {
-        http.Error(w, "Unable to create session", http.StatusInternalServerError)
-        return
-    }
+	// Generate a cryptographically secure session token.
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		http.Error(w, "Unable to create session", http.StatusInternalServerError)
+		return
+	}
 
-    token := hex.EncodeToString(tokenBytes)
+	token := hex.EncodeToString(tokenBytes)
 
-    // Store only the SHA-256 hash of the session token in PostgreSQL.
-    tokenHash := sha256.Sum256([]byte(token))
-    hashedToken := hex.EncodeToString(tokenHash[:])
+	// Store only the SHA-256 hash of the session token.
+	tokenHash := sha256.Sum256([]byte(token))
+	hashedToken := hex.EncodeToString(tokenHash[:])
 
-    expiresAt := time.Now().Add(7 * 24 * time.Hour)
+	expiresAt := time.Now().Add(7 * 24 * time.Hour)
 
-    _, err = h.DB.Exec(ctx, `
-        INSERT INTO public.sessions (user_id, token_hash, expires_at)
-        VALUES ($1, $2, $3)
-    `, user.ID, hashedToken, expiresAt)
+	_, err = h.DB.Exec(ctx, `
+		INSERT INTO public.sessions (user_id, token_hash, expires_at)
+		VALUES ($1, $2, $3)
+	`, user.ID, hashedToken, expiresAt)
 
-    if err != nil {
-        http.Error(w, "Unable to create session", http.StatusInternalServerError)
-        return
-    }
+	if err != nil {
+		http.Error(w, "Unable to create session", http.StatusInternalServerError)
+		return
+	}
 
-    http.SetCookie(w, &http.Cookie{
-        Name:     "talentra_session",
-        Value:    token,
-        Path:     "/",
-        HttpOnly: true,
-        Secure:   false, // Local HTTP development only.
-        SameSite: http.SameSiteLaxMode,
-        Expires:  expiresAt,
-        MaxAge:   int((7 * 24 * time.Hour).Seconds()),
-    })
+	http.SetCookie(w, &http.Cookie{
+		Name:     "talentra_session",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   false, // Local HTTP development only.
+		SameSite: http.SameSiteLaxMode,
+		Expires:  expiresAt,
+		MaxAge:   int((7 * 24 * time.Hour).Seconds()),
+	})
 
-    w.Header().Set("Content-Type", "application/json")
-    _ = json.NewEncoder(w).Encode(map[string]interface{}{
-        "message": "Login successful",
-        "user": map[string]interface{}{
-            "id":       user.ID,
-            "fullName": user.FullName,
-            "email":    user.Email,
-            "role":     user.Role,
-        },
-    })
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "Login successful",
+		"user": map[string]interface{}{
+			"id":       user.ID,
+			"fullName": user.FullName,
+			"email":    user.Email,
+			"role":     user.Role,
+		},
+	})
 }
-
 
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

@@ -7,6 +7,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +32,67 @@ type JobSearchFilters struct {
 	WorkMode      string   `json:"work_mode"`
 	Skills        []string `json:"skills"`
 	MinExperience int      `json:"min_experience"`
+}
+
+func parseCandidateSearchWithRegex(query string) CandidateSearchFilters {
+	q := strings.ToLower(query)
+	var filters CandidateSearchFilters
+
+	// Location
+	for _, location := range []string{
+		"Mumbai", "Pune", "Bengaluru", "Bangalore",
+		"Hyderabad", "Chennai", "Delhi", "Noida",
+		"Gurugram", "Gurgaon", "Remote",
+	} {
+		if strings.Contains(q, strings.ToLower(location)) {
+			filters.Location = location
+			break
+		}
+	}
+
+	// Minimum years of experience
+	expRegex := regexp.MustCompile(`(?i)(?:at least|minimum|min\.?)?\s*(\d{1,2})\s*\+?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:experience|exp)`)
+	if match := expRegex.FindStringSubmatch(q); len(match) > 1 {
+		filters.MinExperience, _ = strconv.Atoi(match[1])
+	}
+
+	// Maximum CTC in LPA
+	ctcRegex := regexp.MustCompile(`(?i)(?:below|under|maximum|max\.?|up to|at most|ctc\s*(?:of|under|below)?|salary\s*(?:of|under|below)?)\s*(?:₹|rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:lpa|lakhs?|l)?`)
+	if match := ctcRegex.FindStringSubmatch(q); len(match) > 1 {
+		filters.MaxCTCLPA, _ = strconv.ParseFloat(match[1], 64)
+	}
+
+	// Availability in days
+	daysRegex := regexp.MustCompile(`(?i)(?:within|in|available in|available within)\s*(\d{1,3})\s*days?`)
+	if match := daysRegex.FindStringSubmatch(q); len(match) > 1 {
+		filters.AvailableWithinDays, _ = strconv.Atoi(match[1])
+	}
+
+	// Minimum candidate assessment score
+	scoreRegex := regexp.MustCompile(`(?i)(?:score|scored|rating)\s*(?:of|above|over|at least)?\s*(\d{2,3})`)
+	if match := scoreRegex.FindStringSubmatch(q); len(match) > 1 {
+		score, _ := strconv.Atoi(match[1])
+		if score >= 80 && score <= 100 {
+			filters.MinCandidateScore = score
+		}
+	}
+
+	// Common technical skills
+	skills := []string{
+		"JavaScript", "TypeScript", "React", "Node.js",
+		"Python", "Java", "Go", "Golang", "PHP",
+		"MongoDB", "PostgreSQL", "SQL", "AWS",
+		"Docker", "Kubernetes", "Angular", "Vue",
+		"Express", "Django", "FastAPI",
+	}
+
+	for _, skill := range skills {
+		if strings.Contains(q, strings.ToLower(skill)) {
+			filters.Skills = append(filters.Skills, skill)
+		}
+	}
+
+	return filters
 }
 
 func (h *NLPHandler) ParseSearch(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +127,10 @@ func (h *NLPHandler) ParseSearch(w http.ResponseWriter, r *http.Request) {
 
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
-		http.Error(w, "Gemini API key is not configured", http.StatusInternalServerError)
+		filters := parseCandidateSearchWithRegex(request.Query)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(filters)
 		return
 	}
 
@@ -102,7 +168,7 @@ func (h *NLPHandler) ParseSearch(w http.ResponseWriter, r *http.Request) {
 			},
 			"min_candidate_score": {
 				Type:        genai.TypeInteger,
-				Description: "Minimum candidate assessment score explicitly requested, from 80 to 100. Use 0 if unspecified.",
+				Description: "Minimum candidate assessment score. Extract this whenever the recruiter says score, scored, rating, or candidate score followed by a number. For 'score of at least 95', 'score 95+', or 'candidate score 95', return 95. Use 0 only if no score requirement is stated.",
 			},
 			"max_ctc_lpa": {
 				Type:        genai.TypeNumber,
@@ -169,11 +235,10 @@ Recruiter request:
 		log.Printf("Gemini attempt %d failed: %T: %v", attempt, err, err)
 
 		if attempt == 2 || ctx.Err() != nil {
-			http.Error(
-				w,
-				"Gemini is temporarily unavailable. Please try again shortly.",
-				http.StatusBadGateway,
-			)
+			filters := parseCandidateSearchWithRegex(request.Query)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(filters)
 			return
 		}
 
@@ -192,9 +257,19 @@ Recruiter request:
 
 	var filters CandidateSearchFilters
 	if err := json.Unmarshal([]byte(result.Text()), &filters); err != nil {
-		http.Error(w, "Gemini returned an invalid filter response", http.StatusBadGateway)
-		return
+		filters = parseCandidateSearchWithRegex(request.Query)
 	}
+
+	// Explicit score requirements in the original query take priority.
+	log.Printf("DEBUG score extraction: query=%q, extracted=%d",
+		request.Query, extractMinimumCandidateScore(request.Query))
+
+	if score := extractMinimumCandidateScore(request.Query); score != 0 {
+		filters.MinCandidateScore = score
+	}
+
+	log.Printf("DEBUG final minimum candidate score: %d",
+		filters.MinCandidateScore)
 
 	if filters.MinExperience < 0 || filters.MinExperience > 80 ||
 		filters.MaxCTCLPA < 0 || filters.MaxCTCLPA > 100000 ||
@@ -231,6 +306,23 @@ Recruiter request:
 	}
 }
 
+func extractMinimumCandidateScore(query string) int {
+	scoreRegex := regexp.MustCompile(
+		`(?i)(?:candidate\s+)?(?:score|scored|rating)\s+(?:(?:of)\s+)?(?:(?:at\s+least|above|over|minimum|min\.?)\s+)?(\d{2,3})`,
+	)
+
+	match := scoreRegex.FindStringSubmatch(query)
+	if len(match) < 2 {
+		return 0
+	}
+
+	score, err := strconv.Atoi(match[1])
+	if err != nil || score < 80 || score > 100 {
+		return 0
+	}
+
+	return score
+}
 func (h *NLPHandler) ParseJobSearch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -314,6 +406,7 @@ func (h *NLPHandler) ParseJobSearch(w http.ResponseWriter, r *http.Request) {
 			"work_mode",
 			"skills",
 			"min_experience",
+			"min_candidate_score",
 		},
 	}
 
