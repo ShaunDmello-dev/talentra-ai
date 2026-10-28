@@ -95,7 +95,31 @@ func (h *JobSearchHandler) Search(w http.ResponseWriter, r *http.Request) {
     FROM public.jobs j
     LEFT JOIN public.companies c ON c.id = j.company_id
     WHERE
-        ($1 = '' OR j.title ILIKE '%' || $1 || '%')
+(
+    $1 = ''
+    OR NOT EXISTS (
+        SELECT 1
+        FROM regexp_split_to_table(
+            regexp_replace(LOWER($1), '[^a-z0-9]+', ' ', 'g'),
+            '\s+'
+        ) AS query_word
+        WHERE query_word <> ''
+          AND query_word NOT IN (
+              'find', 'me', 'a', 'an', 'the', 'for',
+              'job', 'jobs', 'role', 'roles', 'position', 'positions'
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM regexp_split_to_table(
+                  regexp_replace(LOWER(j.title), '[^a-z0-9]+', ' ', 'g'),
+                  '\s+'
+              ) AS title_word
+              WHERE
+                  title_word = regexp_replace(query_word, 's$', '')
+                  OR title_word = query_word
+          )
+    )
+)
         AND ($2 = '' OR COALESCE(j.location, '') ILIKE '%' || $2 || '%')
         AND ($3::float8 IS NULL OR j.max_salary_lpa >= $3)
         AND ($4 = '' OR LOWER(COALESCE(j.work_mode, '')) = $4)
