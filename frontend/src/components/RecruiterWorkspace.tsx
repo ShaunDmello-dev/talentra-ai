@@ -316,9 +316,9 @@ async function importGitHubCandidate(candidate: GitHubCandidate) {
 
   try {
     const response = await fetch(
-      "http://localhost:8080/api/v1/recruiter/candidates/import",
-      {
-        method: "POST",
+  `${import.meta.env.VITE_API_URL}/api/v1/recruiter/candidates/import`,
+  {
+    method: "POST",
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
@@ -390,13 +390,13 @@ async function searchGitHubCandidates() {
       return;
     }
 
-    const response = await fetch(
-      `http://localhost:8080/api/v1/recruiter/candidates/github?${params.toString()}`,
-      {
-        credentials: "include",
-        headers: { Accept: "application/json" },
-      },
-    );
+   const response = await fetch(
+  `${import.meta.env.VITE_API_URL}/api/v1/recruiter/candidates/github?${params.toString()}`,
+  {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  },
+);
 
     if (!response.ok) {
       throw new Error(
@@ -433,7 +433,7 @@ async function handleSearch() {
 
 try {
   const parseResponse = await fetch(
-    "http://localhost:8080/api/v1/recruiter/parse-search",
+    `${import.meta.env.VITE_API_URL}/api/v1/recruiter/parse-search`,
     {
       method: "POST",
       credentials: "include",
@@ -578,13 +578,13 @@ if (filters.current_company?.trim()) {
     params.set("limit", "50");
     console.log("Recruiter search filters being sent:", filters);
     const response = await fetch(
-      `http://localhost:8080/api/v1/recruiter/candidates?${params.toString()}`,
-      {
-        method: "GET",
-        credentials: "include",
-        headers: { Accept: "application/json" },
-      }
-    );
+  `${import.meta.env.VITE_API_URL}/api/v1/recruiter/candidates?${params.toString()}`,
+  {
+    method: "GET",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  }
+);
 
     if (response.status === 401 || response.status === 403) {
       throw new Error(
@@ -600,12 +600,10 @@ if (filters.current_company?.trim()) {
 
     setCandidates(data.candidates);
     setResultCount(data.count);
-
-
     const discoverResponse = await fetch(
-      "http://localhost:8080/api/v1/recruiter/pipeline/discover",
-      {
-        method: "POST",
+  `${import.meta.env.VITE_API_URL}/api/v1/recruiter/pipeline/discover`,
+  {
+    method: "POST",
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
@@ -641,9 +639,9 @@ if (filters.current_company?.trim()) {
 async function loadPipelineCounts() {
   try {
     const response = await fetch(
-      "http://localhost:8080/api/v1/recruiter/pipeline",
-      {
-        method: "GET",
+  `${import.meta.env.VITE_API_URL}/api/v1/recruiter/pipeline`,
+  {
+    method: "GET",
         credentials: "include",
         headers: { Accept: "application/json" },
       },
@@ -691,9 +689,9 @@ async function updateCandidateStage(
 ) {
   try {
     const response = await fetch(
-      "http://localhost:8080/api/v1/recruiter/pipeline",
-      {
-        method: "PUT",
+  `${import.meta.env.VITE_API_URL}/api/v1/recruiter/pipeline`,
+  {
+    method: "PUT",
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
@@ -755,9 +753,9 @@ async function sendCandidateEmail() {
 
   try {
     const response = await fetch(
-      "http://localhost:8080/api/v1/recruiter/send-email",
-      {
-        method: "POST",
+  `${import.meta.env.VITE_API_URL}/api/v1/recruiter/send-email`,
+  {
+    method: "POST",
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
@@ -812,7 +810,6 @@ async function sendCandidateEmail() {
               <p className="text-[10px] tracking-[0.18em] text-stone-500">RECRUITER WORKSPACE</p>
             </div>
           </div>
-
           <nav className="flex-1 space-y-1 px-3 py-5">
             <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">
               Workspace
@@ -836,9 +833,7 @@ async function sendCandidateEmail() {
             </button>
           ))}
           </nav>
-
           <div className="border-t border-violet-100 p-3">
-
             <div className="mt-2 flex items-center gap-3 rounded-xl bg-[#F8F7FC] p-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-violet-200 text-xs font-bold text-violet-900">
                 TA

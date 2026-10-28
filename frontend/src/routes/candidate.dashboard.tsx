@@ -180,10 +180,9 @@ function CandidateDashboard() {
 
   try {
     const response = await fetch(
-      "http://localhost:8080/api/v1/candidate/profile",
-      { credentials: "include" },
-    );
-
+  `${import.meta.env.VITE_API_URL}/api/v1/candidate/profile`,
+  { credentials: "include" },
+);
     if (!response.ok) {
       throw new Error("Failed to load profile.");
     }
@@ -223,10 +222,10 @@ const saveProfile = async () => {
   };
 
   try {
-    const response = await fetch(
-      "http://localhost:8080/api/v1/candidate/profile",
-      {
-        method: "PUT",
+   const response = await fetch(
+  `${import.meta.env.VITE_API_URL}/api/v1/candidate/profile`,
+  {
+    method: "PUT",
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
@@ -263,10 +262,9 @@ const loadCompanies = async (searchTerm = "") => {
     }
 
     const response = await fetch(
-      `http://localhost:8080/api/v1/candidate/companies?${params.toString()}`,
-      { credentials: "include" },
-    );
-
+  `${import.meta.env.VITE_API_URL}/api/v1/candidate/companies?${params.toString()}`,
+  { credentials: "include" },
+);
     if (!response.ok) {
       throw new Error("Failed to load companies.");
     }
@@ -399,9 +397,9 @@ function startVoiceSearch() {
 
     try {
       const response = await fetch(
-        `http://localhost:8080/api/v1/candidate/jobs?${params.toString()}`,
-        { credentials: "include" },
-      );
+  `${import.meta.env.VITE_API_URL}/api/v1/candidate/jobs?${params.toString()}`,
+  { credentials: "include" },
+);
 
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
@@ -426,9 +424,9 @@ function startVoiceSearch() {
 async function loadSavedJobs() {
   try {
     const response = await fetch(
-      "http://localhost:8080/api/v1/candidate/saved-jobs",
-      { credentials: "include" },
-    );
+  `${import.meta.env.VITE_API_URL}/api/v1/candidate/saved-jobs`,
+  { credentials: "include" },
+);
 
     if (!response.ok) {
       throw new Error("Unable to load saved jobs.");
@@ -452,12 +450,12 @@ async function toggleSavedJob(jobId: number) {
 
   try {
     const response = await fetch(
-      `http://localhost:8080/api/v1/candidate/saved-jobs/${jobId}`,
-      {
-        method: isSaved ? "DELETE" : "POST",
-        credentials: "include",
-      },
-    );
+  `${import.meta.env.VITE_API_URL}/api/v1/candidate/saved-jobs/${jobId}`,
+  {
+    method: isSaved ? "DELETE" : "POST",
+    credentials: "include",
+  },
+);
 
     if (!response.ok) {
       throw new Error("Unable to update saved job.");
@@ -494,14 +492,14 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
 
     try {
       const parseResponse = await fetch(
-        "http://localhost:8080/api/v1/candidate/parse-search",
-        {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: search.trim() }),
-        },
-      );
+  `${import.meta.env.VITE_API_URL}/api/v1/candidate/parse-search`,
+  {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: search.trim() }),
+  },
+);
 
       if (!parseResponse.ok) {
         throw new Error("Gemini search unavailable");
@@ -630,7 +628,7 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
   type="button"
   onClick={async () => {
     try {
-      await fetch("http://localhost:8080/api/v1/auth/logout", {
+      await fetch(`${import.meta.env.VITE_API_URL}/api/v1/auth/logout`, {
         method: "POST",
         credentials: "include",
       });

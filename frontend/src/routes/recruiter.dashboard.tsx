@@ -22,13 +22,13 @@ function RecruiterDashboard() {
 
     async function verifySession() {
       try {
-        const response = await fetch(
-          "http://localhost:8080/api/v1/auth/me",
-          {
-            method: "GET",
-            credentials: "include",
-          }
-        );
+       const response = await fetch(
+  `${import.meta.env.VITE_API_URL}/api/v1/auth/me`,
+  {
+    method: "GET",
+    credentials: "include",
+  }
+);
 
         if (!response.ok) {
           if (active) {
@@ -75,12 +75,12 @@ function RecruiterDashboard() {
 
     try {
       const response = await fetch(
-        "http://localhost:8080/api/v1/auth/logout",
-        {
-          method: "POST",
-          credentials: "include",
-        }
-      );
+  `${import.meta.env.VITE_API_URL}/api/v1/auth/logout`,
+  {
+    method: "POST",
+    credentials: "include",
+  }
+);
 
       if (!response.ok) {
         throw new Error("Logout failed. Please try again.");
