@@ -233,7 +233,6 @@ Recruiter request:
 		}
 
 		log.Printf("Gemini attempt %d failed: %T: %v", attempt, err, err)
-
 		if strings.Contains(err.Error(), "429") ||
 			strings.Contains(strings.ToLower(err.Error()), "quota") ||
 			strings.Contains(strings.ToLower(err.Error()), "resource_exhausted") {
@@ -353,6 +352,114 @@ func extractMinimumCandidateScore(query string) int {
 	return score
 }
 
+func parseJobSearchWithRegex(query string) JobSearchFilters {
+	q := strings.ToLower(strings.TrimSpace(query))
+	var filters JobSearchFilters
+
+	// Extract location.
+	locations := []string{
+		"Mumbai", "Pune", "Bengaluru", "Bangalore",
+		"Hyderabad", "Chennai", "Delhi", "Noida",
+		"Gurugram", "Gurgaon",
+	}
+
+	for _, location := range locations {
+		if regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(location) + `\b`).MatchString(q) {
+			filters.Location = location
+			break
+		}
+	}
+
+	// Extract minimum salary in LPA.
+	salaryRegex := regexp.MustCompile(
+		`(?i)(?:at least|minimum|min\.?|above|over|paying|salary of)\s*₹?\s*(\d+(?:\.\d+)?)\s*(?:lpa|lakhs?|lacs?)`,
+	)
+	if match := salaryRegex.FindStringSubmatch(q); len(match) > 1 {
+		filters.MinSalary, _ = strconv.ParseFloat(match[1], 64)
+	}
+
+	// Extract minimum experience.
+	expRegex := regexp.MustCompile(
+		`(?i)(?:at least|minimum|min\.?)?\s*(\d{1,2})\s*\+?\s*(?:years?|yrs?)(?:\s+of)?(?:\s+experience|\s+exp)?`,
+	)
+	if match := expRegex.FindStringSubmatch(q); len(match) > 1 {
+		filters.MinExperience, _ = strconv.Atoi(match[1])
+	}
+
+	// Extract work mode.
+	switch {
+	case regexp.MustCompile(`\bremote\b`).MatchString(q):
+		filters.WorkMode = "remote"
+	case regexp.MustCompile(`\bhybrid\b`).MatchString(q):
+		filters.WorkMode = "hybrid"
+	case regexp.MustCompile(`\b(onsite|on-site|in-office)\b`).MatchString(q):
+		filters.WorkMode = "onsite"
+	}
+
+	// Match complete skill names, so "Go" does not match "Django".
+	skills := []string{
+		"JavaScript", "TypeScript", "React", "Node.js",
+		"NodeJS", "Python", "Golang", "Go", "Java",
+		"PHP", "Laravel", "MongoDB", "PostgreSQL",
+		"MySQL", "SQL", "AWS", "Docker", "Kubernetes",
+		"Angular", "Vue", "Express", "Django",
+		"FastAPI", "Next.js", "Tailwind CSS",
+		"Machine Learning", "Data Engineering", "UI/UX",
+	}
+
+	for _, skill := range skills {
+		pattern := `(?i)(^|[^a-z0-9])` +
+			regexp.QuoteMeta(skill) + `([^a-z0-9]|$)`
+
+		if regexp.MustCompile(pattern).MatchString(q) {
+			canonical := skill
+			if strings.EqualFold(skill, "Golang") {
+				canonical = "Go"
+			}
+			if strings.EqualFold(skill, "NodeJS") {
+				canonical = "Node.js"
+			}
+			filters.Skills = append(filters.Skills, canonical)
+		}
+	}
+
+	// Remove filters and conversational words to infer the job title.
+	title := q
+	title = regexp.MustCompile(
+		`(?i)\b(find me|find|search for|search|show me|show|get me|looking for|look for|please)\b`,
+	).ReplaceAllString(title, " ")
+
+	title = regexp.MustCompile(
+		`(?i)\b(in|based in|located in)\s+(mumbai|pune|bengaluru|bangalore|hyderabad|chennai|delhi|noida|gurugram|gurgaon)\b`,
+	).ReplaceAllString(title, " ")
+
+	title = regexp.MustCompile(
+		`(?i)\b(at least|minimum|min\.?|above|over|paying|salary of)\s*₹?\s*\d+(?:\.\d+)?\s*(?:lpa|lakhs?|lacs?)\b`,
+	).ReplaceAllString(title, " ")
+
+	title = expRegex.ReplaceAllString(title, " ")
+	title = regexp.MustCompile(
+		`(?i)\b(remote|hybrid|onsite|on-site|in-office)\b`,
+	).ReplaceAllString(title, " ")
+
+	title = regexp.MustCompile(
+		`(?i)\b(jobs?|opportunities|positions|roles)\b`,
+	).ReplaceAllString(title, " ")
+
+	title = regexp.MustCompile(`[,.!?]+`).ReplaceAllString(title, " ")
+	title = strings.Join(strings.Fields(title), " ")
+	filters.Title = strings.TrimSpace(title)
+
+	return filters
+}
+
+func writeJobSearchFallback(w http.ResponseWriter, query string) {
+	filters := parseJobSearchWithRegex(query)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(filters)
+}
+
 func (h *NLPHandler) ParseJobSearch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -380,11 +487,11 @@ func (h *NLPHandler) ParseJobSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		http.Error(w, "Gemini API key is not configured", http.StatusInternalServerError)
-		return
-	}
+apiKey := os.Getenv("GEMINI_API_KEY")
+if apiKey == "" {
+    writeJobSearchFallback(w, request.Query)
+    return
+}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
@@ -393,11 +500,11 @@ func (h *NLPHandler) ParseJobSearch(w http.ResponseWriter, r *http.Request) {
 		APIKey:  apiKey,
 		Backend: genai.BackendGeminiAPI,
 	})
-	if err != nil {
-		log.Printf("Gemini client creation failed: %v", err)
-		http.Error(w, "Gemini could not interpret the job search", http.StatusBadGateway)
-		return
-	}
+if err != nil {
+    log.Printf("Gemini client creation failed: %v", err)
+    writeJobSearchFallback(w, request.Query)
+    return
+}
 
 	schema := &genai.Schema{
 		Type: genai.TypeObject,
@@ -487,14 +594,11 @@ Candidate request:
 			err,
 		)
 
-		if attempt == 2 {
-			http.Error(
-				w,
-				"Gemini is temporarily unavailable. Please try again.",
-				http.StatusBadGateway,
-			)
-			return
-		}
+if attempt == 2 {
+    log.Println("Gemini unavailable; using job-search regex fallback")
+    writeJobSearchFallback(w, request.Query)
+    return
+}
 
 		// Stop if the request has been cancelled or timed out.
 		timer := time.NewTimer(2 * time.Second)
@@ -513,11 +617,12 @@ Candidate request:
 		}
 	}
 
-	var filters JobSearchFilters
-	if err := json.Unmarshal([]byte(result.Text()), &filters); err != nil {
-		http.Error(w, "Gemini returned invalid job filters", http.StatusBadGateway)
-		return
-	}
+var filters JobSearchFilters
+if err := json.Unmarshal([]byte(result.Text()), &filters); err != nil {
+    log.Printf("Gemini returned invalid job filters: %v", err)
+    writeJobSearchFallback(w, request.Query)
+    return
+}
 
 	filters.Title = strings.TrimSpace(filters.Title)
 	filters.Location = strings.TrimSpace(filters.Location)
