@@ -21,6 +21,12 @@ type AuthHandler struct {
     DB           *pgxpool.Pool
     CookieSecure bool
 }
+func (h *AuthHandler) sessionSameSite() http.SameSite {
+    if h.CookieSecure {
+        return http.SameSiteNoneMode
+    }
+    return http.SameSiteLaxMode
+}
 
 type registerRequest struct {
 	FullName        string   `json:"fullName"`
@@ -300,7 +306,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-Secure:   h.CookieSecure,		SameSite: http.SameSiteLaxMode,
+Secure:   h.CookieSecure,		SameSite: h.sessionSameSite(),
 		Expires:  expiresAt,
 		MaxAge:   int((7 * 24 * time.Hour).Seconds()),
 	})
@@ -396,7 +402,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
-Secure:   h.CookieSecure,		SameSite: http.SameSiteLaxMode,
+Secure:   h.CookieSecure,		SameSite: h.sessionSameSite(),
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 	})
