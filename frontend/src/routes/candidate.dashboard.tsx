@@ -12,6 +12,7 @@ import {
   Mic,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { LogOut } from "lucide-react";
 
 type Job = {
   id: number;
@@ -131,12 +132,155 @@ export const Route = createFileRoute("/candidate/dashboard")({
 
 function CandidateDashboard() {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [showCompanies, setShowCompanies] = useState(false);
+  const [companies, setCompanies] = useState<
+    {
+      id: number;
+      name: string;
+      companyScore: number | null;
+      jobs: {
+        id: number;
+        title: string;
+        location: string | null;
+        workMode: string | null;
+        minSalaryLpa: number | null;
+        maxSalaryLpa: number | null;
+      }[];
+    }[]
+  >([]);
+  const [companySearch, setCompanySearch] = useState("");
+  const [companiesLoading, setCompaniesLoading] = useState(false);
+  const [companiesError, setCompaniesError] = useState("");
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [savedJobIds, setSavedJobIds] = useState<number[]>([]);
   const [savedJobs, setSavedJobs] = useState<SavedJob[]>([]);
   const [showSavedJobs, setShowSavedJobs] = useState(false);
   const [search, setSearch] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileMessage, setProfileMessage] = useState("");
+
+  const [profile, setProfile] = useState({
+    fullName: "",
+    email: "",
+    location: "",
+    yearsExperience: 0,
+    expectedCtcLpa: 0,
+    availabilityDays: 0,
+    skills: [] as string[],
+  });
+
+  const [profileSkills, setProfileSkills] = useState("");
+
+  const loadProfile = async () => {
+  setProfileLoading(true);
+  setProfileMessage("");
+
+  try {
+    const response = await fetch(
+      "http://localhost:8080/api/v1/candidate/profile",
+      { credentials: "include" },
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to load profile.");
+    }
+
+    const data = await response.json();
+
+    setProfile({
+      fullName: data.fullName ?? "",
+      email: data.email ?? "",
+      location: data.location ?? "",
+      yearsExperience: data.yearsExperience ?? 0,
+      expectedCtcLpa: data.expectedCtcLpa ?? 0,
+      availabilityDays: data.availabilityDays ?? 0,
+      skills: data.skills ?? [],
+    });
+
+    setProfileSkills((data.skills ?? []).join(", "));
+  } catch (error) {
+    setProfileMessage(
+      error instanceof Error ? error.message : "Could not load profile.",
+    );
+  } finally {
+    setProfileLoading(false);
+  }
+};
+
+const saveProfile = async () => {
+  setProfileSaving(true);
+  setProfileMessage("");
+
+  const updatedProfile = {
+    ...profile,
+    skills: profileSkills
+      .split(",")
+      .map((skill) => skill.trim())
+      .filter(Boolean),
+  };
+
+  try {
+    const response = await fetch(
+      "http://localhost:8080/api/v1/candidate/profile",
+      {
+        method: "PUT",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updatedProfile),
+      },
+    );
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to save profile.");
+    }
+
+    setProfile(updatedProfile);
+    setProfileMessage("Profile updated successfully!");
+  } catch (error) {
+    setProfileMessage(
+      error instanceof Error ? error.message : "Could not save profile.",
+    );
+  } finally {
+    setProfileSaving(false);
+  }
+};
+
+const loadCompanies = async (searchTerm = "") => {
+  setCompaniesLoading(true);
+  setCompaniesError("");
+
+  try {
+    const params = new URLSearchParams();
+    if (searchTerm.trim()) {
+      params.set("q", searchTerm.trim());
+    }
+
+    const response = await fetch(
+      `http://localhost:8080/api/v1/candidate/companies?${params.toString()}`,
+      { credentials: "include" },
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to load companies.");
+    }
+
+    const data = await response.json();
+    setCompanies(data);
+  } catch (error) {
+    setCompaniesError(
+      error instanceof Error ? error.message : "Could not load companies.",
+    );
+  } finally {
+    setCompaniesLoading(false);
+  }
+};
 
 function startVoiceSearch() {
   const SpeechRecognitionAPI = (
@@ -277,7 +421,7 @@ function startVoiceSearch() {
     }
   }
 
-  
+
 
 async function loadSavedJobs() {
   try {
@@ -364,7 +508,7 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
       }
 
       filters = await parseResponse.json();
-      
+
 
 } catch {
   filters = parseJobSearchWithRegex(search.trim());
@@ -406,12 +550,30 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
         <p className="mb-3 mt-10 text-xs font-semibold uppercase tracking-wider text-stone-400">
           Candidate workspace
         </p>
-
-        <nav className="space-y-1">
-          
         <button
         type="button"
-        onClick={() => setShowSavedJobs(false)}
+        onClick={() => {
+          setShowProfile(true);
+          setShowSavedJobs(false);
+          setSelectedJob(null);
+          void loadProfile();
+        }}
+        className="mb-3 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-stone-500 hover:bg-violet-50 hover:text-[#7C3AED]"
+      >
+        <UserRound size={18} />
+        My Profile
+      </button>
+
+        <nav className="space-y-1">
+
+        <button
+        type="button"
+        onClick={() => {
+  setShowCompanies(false);
+  setShowProfile(false);
+  setShowSavedJobs(false);
+  setSelectedJob(null);
+}}
         className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium ${
             !showSavedJobs
             ? "bg-violet-50 text-[#312E81]"
@@ -422,20 +584,34 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
         Overview
         </button>
 
-        <button
-        type="button"
-        onClick={() => setShowSavedJobs(false)}
-        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-stone-500 hover:bg-stone-50 hover:text-[#7C3AED]"
-        >
-        <Search size={18} />
-        Find jobs
-        </button>
-
-        <NavItem icon={<Building2 size={18} />} label="Find companies" />
 
         <button
         type="button"
-        onClick={() => setShowSavedJobs(true)}
+        onClick={() => {
+        setShowCompanies(true);
+        setShowProfile(false);
+        setShowSavedJobs(false);
+        setSelectedJob(null);
+        void loadCompanies();
+      }}
+        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium ${
+          showCompanies
+            ? "bg-violet-50 text-[#312E81]"
+            : "text-stone-500 hover:bg-stone-50 hover:text-[#7C3AED]"
+        }`}
+      >
+        <Building2 size={18} />
+        Find companies
+      </button>
+
+        <button
+        type="button"
+        onClick={() => {
+  setShowSavedJobs(true);
+  setShowCompanies(false);
+  setShowProfile(false);
+  setSelectedJob(null);
+}}
         className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium ${
             showSavedJobs
             ? "bg-violet-50 text-[#312E81]"
@@ -446,9 +622,28 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
         Saved jobs
         </button>
 
-        <NavItem icon={<UserRound size={18} />} label="My profile" />
+
 
         </nav>
+
+<button
+  type="button"
+  onClick={async () => {
+    try {
+      await fetch("http://localhost:8080/api/v1/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+    } finally {
+      window.location.href = "/";
+    }
+  }}
+  className="mt-6 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-stone-600 transition hover:bg-rose-50 hover:text-rose-600"
+>
+  <LogOut size={18} />
+  <span>Sign out</span>
+</button>
+
 
         <div className="mt-10 rounded-2xl bg-[#FFF7ED] p-4">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-[#7C3AED]">
@@ -464,7 +659,288 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
       </aside>
 
       <main className="min-w-0 flex-1 p-5 sm:p-8">
-        <header className="mb-8">
+
+{showCompanies ? (
+<section className="talentra-enter talentra-card mx-auto max-w-5xl space-y-6">    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+      <div>
+        <p className="text-sm font-medium text-[#7C3AED]">
+          Explore employers
+        </p>
+        <h1 className="mt-2 text-3xl font-bold text-[#312E81]">
+          Find companies
+        </h1>
+        <p className="mt-2 text-sm text-stone-500">
+          Discover companies and explore their available jobs.
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setShowCompanies(false)}
+        className="rounded-xl border border-stone-200 px-4 py-2 text-sm hover:bg-stone-50"
+      >
+        Back to jobs
+      </button>
+    </div>
+
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        void loadCompanies(companySearch);
+      }}
+      className="flex flex-col gap-3 rounded-2xl border border-violet-100 bg-white p-4 shadow-sm sm:flex-row"
+    >
+      <input
+        type="text"
+        value={companySearch}
+        onChange={(event) => setCompanySearch(event.target.value)}
+        placeholder="Search by company name..."
+        className="min-w-0 flex-1 rounded-xl border border-stone-200 px-4 py-3 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+      />
+
+      <button
+        type="submit"
+        disabled={companiesLoading}
+        className="rounded-xl bg-[#7C3AED] px-5 py-3 text-sm font-semibold text-white hover:bg-[#6D28D9] disabled:opacity-60"
+      >
+        {companiesLoading ? "Searching..." : "Search companies"}
+      </button>
+    </form>
+
+    {companiesError && (
+      <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">
+        {companiesError}
+      </p>
+    )}
+
+    {companiesLoading ? (
+      <div className="rounded-2xl border border-stone-200 bg-white p-8 text-center text-sm text-stone-500">
+        Loading companies...
+      </div>
+    ) : companies.length === 0 ? (
+      <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-10 text-center">
+        <Building2 className="mx-auto text-violet-500" size={32} />
+        <h2 className="mt-3 font-semibold text-[#312E81]">
+          No companies found
+        </h2>
+        <p className="mt-1 text-sm text-stone-500">
+          Try another company name or clear your search.
+        </p>
+      </div>
+    ) : (
+      <div className="grid gap-5 lg:grid-cols-2">
+        {companies.map((company) => (
+          <article
+            key={company.id}
+            className="rounded-2xl border border-violet-100 bg-white p-5 shadow-sm"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-[#7C3AED]">
+                <Building2 size={22} />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <h2 className="break-words text-lg font-semibold text-[#312E81]">
+                  {company.name}
+                </h2>
+                <p className="mt-1 text-sm text-stone-500">
+                  {company.companyScore !== null
+                    ? `Company score: ${company.companyScore}`
+                    : "Company score not available"}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 border-t border-stone-100 pt-4">
+              <h3 className="font-semibold text-stone-800">
+                Available jobs ({company.jobs.length})
+              </h3>
+
+              {company.jobs.length === 0 ? (
+                <p className="mt-2 text-sm text-stone-500">
+                  No jobs are currently listed for this company.
+                </p>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {company.jobs.map((job) => (
+                    <div
+                      key={job.id}
+                      className="rounded-xl bg-stone-50 p-3"
+                    >
+                      <h4 className="font-medium text-stone-800">
+                        {job.title}
+                      </h4>
+
+                      <p className="mt-1 text-sm text-stone-500">
+                        {job.location || "Location not specified"}
+                        {" · "}
+                        {job.workMode || "Work mode not specified"}
+                      </p>
+
+                      <p className="mt-2 text-sm font-medium text-[#7C3AED]">
+                        {job.minSalaryLpa != null ||
+                        job.maxSalaryLpa != null
+                          ? `₹${job.minSalaryLpa ?? "—"}–${job.maxSalaryLpa ?? "—"} LPA`
+                          : "Salary not specified"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+    )}
+  </section>
+) : showProfile ? (
+
+  <section className="mx-auto max-w-3xl rounded-2xl border border-violet-100 bg-white p-6 shadow-sm sm:p-8">
+    <div className="mb-6 flex items-center justify-between">
+      <div>
+        <h1 className="text-2xl font-bold text-[#312E81]">My Profile</h1>
+        <p className="mt-1 text-sm text-stone-500">
+          Keep your professional details up to date.
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={() => setShowProfile(false)}
+        className="rounded-xl border border-stone-200 px-4 py-2 text-sm hover:bg-stone-50"
+      >
+        Back to jobs
+      </button>
+    </div>
+
+    {profileLoading ? (
+      <p className="py-6 text-sm text-stone-500">Loading profile...</p>
+    ) : (
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void saveProfile();
+        }}
+        className="space-y-5"
+      >
+        <div className="grid gap-5 sm:grid-cols-2">
+          <label className="block text-sm font-medium text-stone-700">
+            Full name
+            <input
+              required
+              value={profile.fullName}
+              onChange={(event) =>
+                setProfile({ ...profile, fullName: event.target.value })
+              }
+              className="mt-2 w-full rounded-xl border border-stone-200 px-3 py-2.5"
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-stone-700">
+            Email
+            <input
+              type="email"
+              value={profile.email}
+              readOnly
+              className="mt-2 w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5"
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-stone-700">
+            Location
+            <input
+              required
+              value={profile.location}
+              onChange={(event) =>
+                setProfile({ ...profile, location: event.target.value })
+              }
+              placeholder="e.g. Mumbai"
+              className="mt-2 w-full rounded-xl border border-stone-200 px-3 py-2.5"
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-stone-700">
+            Years of experience
+            <input
+              type="number"
+              min="0"
+              step="0.5"
+              value={profile.yearsExperience}
+              onChange={(event) =>
+                setProfile({
+                  ...profile,
+                  yearsExperience: Number(event.target.value),
+                })
+              }
+              className="mt-2 w-full rounded-xl border border-stone-200 px-3 py-2.5"
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-stone-700">
+            Expected CTC (LPA)
+            <input
+              type="number"
+              min="0"
+              step="0.5"
+              value={profile.expectedCtcLpa}
+              onChange={(event) =>
+                setProfile({
+                  ...profile,
+                  expectedCtcLpa: Number(event.target.value),
+                })
+              }
+              className="mt-2 w-full rounded-xl border border-stone-200 px-3 py-2.5"
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-stone-700">
+            Availability (days)
+            <input
+              type="number"
+              min="0"
+              value={profile.availabilityDays}
+              onChange={(event) =>
+                setProfile({
+                  ...profile,
+                  availabilityDays: Number(event.target.value),
+                })
+              }
+              className="mt-2 w-full rounded-xl border border-stone-200 px-3 py-2.5"
+            />
+          </label>
+        </div>
+
+        <label className="block text-sm font-medium text-stone-700">
+          Skills
+          <input
+            value={profileSkills}
+            onChange={(event) => setProfileSkills(event.target.value)}
+            placeholder="React, Go, PostgreSQL"
+            className="mt-2 w-full rounded-xl border border-stone-200 px-3 py-2.5"
+          />
+          <span className="mt-1 block text-xs text-stone-500">
+            Separate skills with commas.
+          </span>
+        </label>
+
+        {profileMessage && (
+          <p className="text-sm text-stone-600" role="status">
+            {profileMessage}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={profileSaving || profileLoading}
+          className="rounded-xl bg-[#312E81] px-5 py-3 text-sm font-semibold text-white hover:bg-[#4338CA] disabled:opacity-50"
+        >
+          {profileSaving ? "Saving..." : "Save profile"}
+        </button>
+      </form>
+    )}
+  </section>
+) : (
+  <>
+    <header className="mb-8">
           <p className="text-sm font-medium text-[#7C3AED]">
             Candidate workspace
           </p>
@@ -477,7 +953,7 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
           </p>
         </header>
 
-        <section className="mb-8 rounded-2xl border border-violet-100 bg-white p-5 shadow-sm sm:p-6">
+        <section className="talentra-enter talentra-card mb-8 rounded-2xl border border-violet-100 bg-white p-5 shadow-sm sm:p-6">
           <div className="mb-4 flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-[#7C3AED]">
               <Sparkles size={20} />
@@ -576,8 +1052,7 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
           </form>
         </section>
 
-        <section>
-          <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+<section className="talentra-enter talentra-enter-delay-1">          <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
             <div>
               <h2 className="text-xl font-bold text-[#312E81]">
                 {showSavedJobs
@@ -624,8 +1099,7 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
           )}
 
           {selectedJob ? (
-  <div className="rounded-2xl border border-violet-100 bg-white p-6 shadow-sm">
-    <button
+<div className="talentra-enter talentra-card rounded-2xl border border-violet-100 bg-white p-6 shadow-sm">    <button
       type="button"
       onClick={() => setSelectedJob(null)}
       className="mb-6 text-sm font-semibold text-[#7C3AED] hover:text-[#312E81]"
@@ -693,8 +1167,7 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
             {(showSavedJobs ? savedJobs : jobs).map((job) => (
               <article
                 key={job.id}
-                className="rounded-2xl border border-stone-200/80 bg-white p-5 shadow-sm transition hover:border-violet-200"
-              >
+className="talentra-enter talentra-card rounded-2xl border border-stone-200/80 bg-white p-5 shadow-sm transition hover:border-violet-200"              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
                     <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-[#7C3AED]">
@@ -709,7 +1182,7 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
                       </p>
                     </div>
                   </div>
-                  
+
                 <button
                 type="button"
                 title={
@@ -782,30 +1255,9 @@ async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
           </div>
           )}
         </section>
+         </>
+        )}
       </main>
-    </div>
-  );
-}
-
-function NavItem({
-  icon,
-  label,
-  active = false,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  active?: boolean;
-}) {
-  return (
-    <div
-      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium ${
-        active
-          ? "bg-violet-50 text-[#312E81]"
-          : "text-stone-500 hover:bg-stone-50 hover:text-[#7C3AED]"
-      }`}
-    >
-      {icon}
-      {label}
     </div>
   );
 }

@@ -1,5 +1,8 @@
-
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
+body {
+  font-family: 'Inter', sans-serif;
+}
 
 :root {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system,
@@ -344,4 +347,197 @@ button:disabled {
   .talentra-logo-sparkle {
     animation: none !important;
   }
+}
+
+/* ── Talentra AI: Motion & visual polish ── */
+
+@keyframes talentra-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes talentra-float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes talentra-glow {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.65;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes talentra-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgb(124 58 237 / 0%);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgb(124 58 237 / 8%);
+  }
+}
+
+.talentra-enter {
+  animation: talentra-fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.talentra-enter-delay-1 {
+  animation-delay: 80ms;
+}
+
+.talentra-enter-delay-2 {
+  animation-delay: 160ms;
+}
+
+.talentra-enter-delay-3 {
+  animation-delay: 240ms;
+}
+
+.talentra-float {
+  animation: talentra-float 5s ease-in-out infinite;
+}
+
+.talentra-glow {
+  animation: talentra-glow 7s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.talentra-card {
+  transition:
+    transform 220ms ease,
+    box-shadow 220ms ease,
+    border-color 220ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .talentra-card:hover {
+    transform: translateY(-3px);
+    border-color: rgb(196 181 253 / 85%);
+    box-shadow: 0 12px 30px -16px rgb(49 46 129 / 24%);
+  }
+}
+
+.talentra-interactive {
+  transition:
+    transform 160ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.talentra-interactive:active {
+  transform: scale(0.98);
+}
+
+.talentra-focus:focus-visible {
+  outline: 2px solid #7c3aed;
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .talentra-enter,
+  .talentra-enter-delay-1,
+  .talentra-enter-delay-2,
+  .talentra-enter-delay-3,
+  .talentra-float,
+  .talentra-glow {
+    animation: none !important;
+  }
+
+  .talentra-card,
+  .talentra-interactive {
+    transition: none !important;
+  }
+
+  .talentra-card:hover,
+  .talentra-interactive:active {
+    transform: none !important;
+  }
+}
+/* Talentra AI — ambient dashboard background */
+body {
+  background:
+    radial-gradient(
+      ellipse at 8% 0%,
+      rgb(196 181 253 / 28%),
+      transparent 36%
+    ),
+    radial-gradient(
+      ellipse at 95% 12%,
+      rgb(251 113 133 / 13%),
+      transparent 30%
+    ),
+    linear-gradient(
+      135deg,
+      #faf8ff 0%,
+      #f8f7ff 48%,
+      #fff8f6 100%
+    );
+  background-attachment: fixed;
+}
+/* Talentra AI — consistent typography */
+body {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Consistent heading hierarchy */
+h1 {
+  font-size: 28px;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+h2 {
+  font-size: 22px;
+  line-height: 1.35;
+  font-weight: 650;
+}
+
+h3 {
+  font-size: 18px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+/* Inputs and text areas */
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Buttons */
+button {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Supporting descriptions and helper text */
+.text-xs {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.text-sm {
+  font-size: 14px;
+  line-height: 1.5;
 }

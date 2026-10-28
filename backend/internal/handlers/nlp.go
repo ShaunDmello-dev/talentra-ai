@@ -234,8 +234,36 @@ Recruiter request:
 
 		log.Printf("Gemini attempt %d failed: %T: %v", attempt, err, err)
 
+		if strings.Contains(err.Error(), "429") ||
+			strings.Contains(strings.ToLower(err.Error()), "quota") ||
+			strings.Contains(strings.ToLower(err.Error()), "resource_exhausted") {
+
+			log.Printf("Gemini quota exceeded; using regex fallback immediately")
+
+			filters := parseCandidateSearchWithRegex(request.Query)
+
+			if score := extractMinimumCandidateScore(request.Query); score != 0 {
+				filters.MinCandidateScore = score
+			}
+
+			log.Printf("DEBUG regex fallback score: %d", filters.MinCandidateScore)
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(filters)
+			return
+		}
+
+
 		if attempt == 2 || ctx.Err() != nil {
 			filters := parseCandidateSearchWithRegex(request.Query)
+
+			if score := extractMinimumCandidateScore(request.Query); score != 0 {
+				filters.MinCandidateScore = score
+			}
+
+			log.Printf("DEBUG regex fallback score: %d", filters.MinCandidateScore)
+
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_ = json.NewEncoder(w).Encode(filters)
@@ -306,9 +334,10 @@ Recruiter request:
 	}
 }
 
+
 func extractMinimumCandidateScore(query string) int {
 	scoreRegex := regexp.MustCompile(
-		`(?i)(?:candidate\s+)?(?:score|scored|rating)\s+(?:(?:of)\s+)?(?:(?:at\s+least|above|over|minimum|min\.?)\s+)?(\d{2,3})`,
+		`(?i)(?:(?:candidate)\s+)?(?:score|scored|rating)\s+(?:(?:of)\s+)?(?:(?:at\s+least|above|over|minimum|min\.?|greater\s+than|more\s+than)\s+)?(\d{2,3})`,
 	)
 
 	match := scoreRegex.FindStringSubmatch(query)
@@ -323,6 +352,7 @@ func extractMinimumCandidateScore(query string) int {
 
 	return score
 }
+
 func (h *NLPHandler) ParseJobSearch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

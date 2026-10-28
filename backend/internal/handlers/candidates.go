@@ -27,6 +27,12 @@ type CandidateResult struct {
 	AvailabilityDays *int     `json:"availability_days"`
 	Skills           []string `json:"skills"`
 	Source           string   `json:"source"`
+	College         *string `json:"college"`
+	GraduationYear  *int    `json:"graduation_year"`
+	CurrentTitle    *string `json:"current_title"`
+	CurrentCompany  *string `json:"current_company"`
+	LinkedInURL     *string `json:"linkedin_url"`
+	SourceReference *string `json:"source_reference"`
 }
 
 func (h *CandidateSearchHandler) Search(w http.ResponseWriter, r *http.Request) {
@@ -34,6 +40,31 @@ func (h *CandidateSearchHandler) Search(w http.ResponseWriter, r *http.Request) 
 
 	// Read optional filters.
 	location := strings.TrimSpace(query.Get("location"))
+	college := strings.TrimSpace(query.Get("college"))
+currentTitle := strings.TrimSpace(query.Get("current_title"))
+currentCompany := strings.TrimSpace(query.Get("current_company"))
+
+var graduationYear *int
+if raw := query.Get("graduation_year"); raw != "" {
+    value, err := strconv.Atoi(raw)
+    if err != nil || value < 1950 || value > 2100 {
+        http.Error(w, "graduation_year must be between 1950 and 2100", http.StatusBadRequest)
+        return
+    }
+    graduationYear = &value
+}
+
+var collegeFilter, titleFilter, companyFilter *string
+
+if college != "" {
+    collegeFilter = &college
+}
+if currentTitle != "" {
+    titleFilter = &currentTitle
+}
+if currentCompany != "" {
+    companyFilter = &currentCompany
+}
 
 	var locationFilter *string
 	if location != "" {
@@ -109,16 +140,22 @@ func (h *CandidateSearchHandler) Search(w http.ResponseWriter, r *http.Request) 
 
 	rows, err := h.DB.Query(ctx, `
 		SELECT
-			id,
-			full_name,
-			email,
-			location,
-			years_experience,
-			candidate_score,
-			expected_ctc_lpa,
-			availability_days,
-			COALESCE(skills, ARRAY[]::text[]),
-			COALESCE(source, 'unknown')
+		id,
+		full_name,
+		email,
+		COALESCE(location, '') AS location,
+		COALESCE(years_experience, 0) AS years_experience,
+		candidate_score,
+		expected_ctc_lpa,
+		availability_days,
+		COALESCE(skills, ARRAY[]::text[]),
+		COALESCE(source, 'unknown'),
+		college,
+		graduation_year,
+		current_title,
+		current_company,
+		linkedin_url,
+		source_reference
 		FROM public.candidates
 		WHERE ($1::text IS NULL OR location ILIKE '%' || $1 || '%')
 					AND (
@@ -137,8 +174,12 @@ func (h *CandidateSearchHandler) Search(w http.ResponseWriter, r *http.Request) 
 		  AND ($4::int IS NULL OR candidate_score >= $4)
 		  AND ($5::numeric IS NULL OR expected_ctc_lpa <= $5)
 		  AND ($6::int IS NULL OR availability_days <= $6)
+			AND ($7::text IS NULL OR college ILIKE '%' || $7 || '%')
+			AND ($8::int IS NULL OR graduation_year = $8)
+			AND ($9::text IS NULL OR current_title ILIKE '%' || $9 || '%')
+			AND ($10::text IS NULL OR current_company ILIKE '%' || $10 || '%')
 		ORDER BY years_experience DESC, full_name ASC
-		LIMIT $7
+		LIMIT $11
 	`,
 		locationFilter,
 		skillsFilter,
@@ -146,6 +187,10 @@ func (h *CandidateSearchHandler) Search(w http.ResponseWriter, r *http.Request) 
 		minCandidateScore,
 		maxCTC,
 		availableWithin,
+		collegeFilter,
+		graduationYear,
+		titleFilter,
+		companyFilter,
 		limit,
 	)
 	if err != nil {
@@ -171,8 +216,15 @@ func (h *CandidateSearchHandler) Search(w http.ResponseWriter, r *http.Request) 
 			&candidate.AvailabilityDays,
 			&candidate.Skills,
 			&candidate.Source,
+			&candidate.College,
+			&candidate.GraduationYear,
+			&candidate.CurrentTitle,
+			&candidate.CurrentCompany,
+			&candidate.LinkedInURL,
+			&candidate.SourceReference,
 		)
 		if err != nil {
+			log.Printf("Candidate row scan failed: %v", err)
 			http.Error(w, "Unable to read candidate results", http.StatusInternalServerError)
 			return
 		}

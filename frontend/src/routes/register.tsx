@@ -25,6 +25,11 @@ function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [company, setCompany] = useState("");
+  const [location, setLocation] = useState("");
+  const [yearsExperience, setYearsExperience] = useState("0");
+  const [expectedCtcLpa, setExpectedCtcLpa] = useState("");
+  const [availabilityDays, setAvailabilityDays] = useState("30");
+  const [skillsInput, setSkillsInput] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -90,13 +95,23 @@ function RegisterPage() {
         headers: {
             "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-            fullName: name.trim(),
-            email: email.trim(),
-            password,
-            role,
-            companyName: role === "recruiter" ? company.trim() : "",
-        }),
+      body: JSON.stringify({
+      fullName: name.trim(),
+      email: email.trim(),
+      password,
+      role,
+      companyName: role === "recruiter" ? company.trim() : "",
+      ...(role === "candidate" && {
+        location: location.trim(),
+        yearsExperience: Number(yearsExperience),
+        expectedCtcLpa: Number(expectedCtcLpa) || 0,
+        availabilityDays: Number(availabilityDays),
+        skills: skillsInput
+          .split(",")
+          .map((skill) => skill.trim())
+          .filter(Boolean),
+      }),
+    }),
         },
     );
 
@@ -120,7 +135,7 @@ function RegisterPage() {
     } finally {
     setLoading(false);
     }
-}    
+}
 
   if (formMessage.startsWith("Account created successfully!")) {
     return (
@@ -318,6 +333,100 @@ function RegisterPage() {
                     )}
                   </div>
                 )}
+
+
+                {role === "candidate" && (
+                  <div className="space-y-4 rounded-xl border border-[#E7E5E4] bg-[#FFF7ED]/50 p-4">
+                    <div>
+                      <h2 className="text-base font-semibold text-[#312E81]">
+                        Your professional profile
+                      </h2>
+                      <p className="mt-1 text-xs text-[#57534E]">
+                        These details help recruiters find you for relevant opportunities.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label htmlFor="candidate-location" className="form-label">
+                        Current location
+                      </label>
+                      <input
+                        id="candidate-location"
+                        value={location}
+                        onChange={(event) => setLocation(event.target.value)}
+                        placeholder="e.g. Mumbai"
+                        className={inputClass(false)}
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="candidate-skills" className="form-label">
+                        Skills
+                      </label>
+                      <input
+                        id="candidate-skills"
+                        value={skillsInput}
+                        onChange={(event) => setSkillsInput(event.target.value)}
+                        placeholder="React, Go, PostgreSQL"
+                        className={inputClass(false)}
+                      />
+                      <p className="mt-1 text-xs text-[#57534E]">
+                        Separate skills with commas.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label htmlFor="candidate-experience" className="form-label">
+                        Years of experience
+                      </label>
+                      <input
+                        id="candidate-experience"
+                        type="number"
+                        min="0"
+                        max="60"
+                        step="0.5"
+                        value={yearsExperience}
+                        onChange={(event) => setYearsExperience(event.target.value)}
+                        className={inputClass(false)}
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="candidate-ctc" className="form-label">
+                        Expected CTC (₹ LPA)
+                      </label>
+                      <input
+                        id="candidate-ctc"
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        value={expectedCtcLpa}
+                        onChange={(event) => setExpectedCtcLpa(event.target.value)}
+                        placeholder="e.g. 12"
+                        className={inputClass(false)}
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="candidate-availability" className="form-label">
+                        Availability / notice period (days)
+                      </label>
+                      <input
+                        id="candidate-availability"
+                        type="number"
+                        min="0"
+                        max="365"
+                        value={availabilityDays}
+                        onChange={(event) => setAvailabilityDays(event.target.value)}
+                        className={inputClass(false)}
+                      />
+                      <p className="mt-1 text-xs text-[#57534E]">
+                        Enter 0 if you can join immediately.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
 
                 <div>
                   <label className="flex cursor-pointer items-start gap-3 text-sm leading-6 text-[#292524]">

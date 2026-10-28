@@ -18,15 +18,21 @@ import (
 )
 
 type AuthHandler struct {
-	DB *pgxpool.Pool
+    DB           *pgxpool.Pool
+    CookieSecure bool
 }
 
 type registerRequest struct {
-	FullName    string `json:"fullName"`
-	Email       string `json:"email"`
-	Password    string `json:"password"`
-	Role        string `json:"role"`
-	CompanyName string `json:"companyName"`
+	FullName        string   `json:"fullName"`
+	Email           string   `json:"email"`
+	Password        string   `json:"password"`
+	Role            string   `json:"role"`
+	CompanyName     string   `json:"companyName"`
+	Location        string   `json:"location"`
+	YearsExperience float64  `json:"yearsExperience"`
+	ExpectedCTCLPA  float64  `json:"expectedCtcLpa"`
+	AvailabilityDays int     `json:"availabilityDays"`
+	Skills          []string `json:"skills"`
 }
 
 type loginRequest struct {
@@ -130,17 +136,44 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create the candidate profile in the same transaction as the user.
-	if req.Role == "candidate" {
-		_, err = tx.Exec(ctx, `
-			INSERT INTO public.candidates (user_id, full_name, email, source)
-			VALUES ($1, $2, $3, 'synthetic')
-		`, userID, req.FullName, req.Email)
+if req.Role == "candidate" {
+    _, err = tx.Exec(ctx, `
+        INSERT INTO public.candidates (
+            user_id,
+            full_name,
+            email,
+            location,
+            years_experience,
+            expected_ctc_lpa,
+            availability_days,
+            skills,
+            source
+        )
+        VALUES (
+            $1, $2, $3,
+            NULLIF($4, ''),
+            NULLIF($5, 0),
+            NULLIF($6, 0),
+            NULLIF($7, 0),
+            $8,
+            'candidate_registration'
+        )
+    `,
+        userID,
+        req.FullName,
+        req.Email,
+        strings.TrimSpace(req.Location),
+        req.YearsExperience,
+        req.ExpectedCTCLPA,
+        req.AvailabilityDays,
+        req.Skills,
+    )
 
-		if err != nil {
-			http.Error(w, "Unable to create account", http.StatusInternalServerError)
-			return
-		}
-	}
+    if err != nil {
+        http.Error(w, "Unable to create account", http.StatusInternalServerError)
+        return
+    }
+}
 
 	var companyID *int64
 	if req.Role == "recruiter" {
@@ -267,8 +300,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false, // Local HTTP development only.
-		SameSite: http.SameSiteLaxMode,
+Secure:   h.CookieSecure,		SameSite: http.SameSiteLaxMode,
 		Expires:  expiresAt,
 		MaxAge:   int((7 * 24 * time.Hour).Seconds()),
 	})
@@ -364,8 +396,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false, // Local HTTP development only.
-		SameSite: http.SameSiteLaxMode,
+Secure:   h.CookieSecure,		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 	})
